@@ -3,12 +3,17 @@ name: Release
 on:
   workflow_dispatch:
     inputs:
-      tag_name:
-        description: "Git tag to create for this release, for example v1.0.0"
+      version_bump:
+        description: "Version bump to apply before building."
         required: true
-        type: string
+        default: patch
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
       release_name:
-        description: "Release title. Leave empty to use the tag name."
+        description: "Release title. Leave empty to use the generated tag."
         required: false
         type: string
       draft:
@@ -27,15 +32,107 @@ permissions:
 
 env:
   BINARY_NAME: router-monitor
+  CARGO_TERM_COLOR: always
 
 jobs:
-  build-macos-universal:
-    name: Build macOS universal
-    runs-on: macos-latest
+  bump-version:
+    name: Bump version
+    runs-on: ubuntu-latest
+    outputs:
+      release_sha: ${{ steps.commit.outputs.release_sha }}
+      release_version: ${{ steps.bump.outputs.release_version }}
+      tag_name: ${{ steps.bump.outputs.tag_name }}
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Calculate next version
+        id: bump
+        env:
+          VERSION_BUMP: ${{ inputs.version_bump }}
+        run: |
+          if [ "$GITHUB_REF_TYPE" != "branch" ]; then
+            echo "Run this workflow from a branch so it can commit the version bump."
+            exit 1
+          fi
+
+          current_version="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)"
+
+          if ! [[ "$current_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Cargo.toml version '${current_version}' is not a plain semantic version."
+            exit 1
+          fi
+
+          IFS=. read -r major minor patch <<< "$current_version"
+
+          case "$VERSION_BUMP" in
+            major)
+              major=$((major + 1))
+              minor=0
+              patch=0
+              ;;
+            minor)
+              minor=$((minor + 1))
+              patch=0
+              ;;
+            patch)
+              patch=$((patch + 1))
+              ;;
+            *)
+              echo "Unsupported version bump '${VERSION_BUMP}'."
+              exit 1
+              ;;
+          esac
+
+          release_version="${major}.${minor}.${patch}"
+          tag_name="v${release_version}"
+
+          if git ls-remote --exit-code --tags origin "refs/tags/${tag_name}" >/dev/null 2>&1; then
+            echo "Tag '${tag_name}' already exists."
+            exit 1
+          fi
+
+          echo "release_version=${release_version}" >> "$GITHUB_OUTPUT"
+          echo "tag_name=${tag_name}" >> "$GITHUB_OUTPUT"
+
+      - name: Update Cargo package version
+        env:
+          RELEASE_VERSION: ${{ steps.bump.outputs.release_version }}
+        run: |
+          perl -0pi -e 's/(\[package\]\s+name = "router-monitor"\s+version = ")[^"]+(")/$1$ENV{RELEASE_VERSION}$2/s' Cargo.toml
+          cargo check
+
+      - name: Commit version bump
+        id: commit
+        run: |
+          if git diff --quiet -- Cargo.toml Cargo.lock; then
+            echo "No version changes were produced."
+            exit 1
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Cargo.toml Cargo.lock
+          git commit -m "Version number bump"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
+          echo "release_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  build-macos-universal:
+    name: Build macOS universal
+    runs-on: macos-latest
+    needs: bump-version
+
+    steps:
+      - name: Check out release commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.bump-version.outputs.release_sha }}
 
       - name: Install stable Rust
         uses: dtolnay/rust-toolchain@stable
@@ -71,10 +168,13 @@ jobs:
   build-linux-musl:
     name: Build Linux x86_64 musl
     runs-on: ubuntu-latest
+    needs: bump-version
 
     steps:
-      - name: Check out repository
+      - name: Check out release commit
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.bump-version.outputs.release_sha }}
 
       - name: Install musl build tools
         run: |
@@ -110,13 +210,15 @@ jobs:
     name: Create tag and GitHub Release
     runs-on: ubuntu-latest
     needs:
+      - bump-version
       - build-macos-universal
       - build-linux-musl
 
     steps:
-      - name: Check out repository
+      - name: Check out release commit
         uses: actions/checkout@v4
         with:
+          ref: ${{ needs.bump-version.outputs.release_sha }}
           fetch-depth: 0
 
       - name: Download packaged executables
@@ -127,32 +229,23 @@ jobs:
 
       - name: Create git tag
         env:
-          TAG_NAME: ${{ inputs.tag_name }}
+          RELEASE_SHA: ${{ needs.bump-version.outputs.release_sha }}
+          TAG_NAME: ${{ needs.bump-version.outputs.tag_name }}
         run: |
-          if [ -z "${TAG_NAME}" ]; then
-            echo "A tag name is required."
-            exit 1
-          fi
-
-          if ! git check-ref-format "refs/tags/${TAG_NAME}"; then
-            echo "Tag '${TAG_NAME}' is not a valid git tag name."
-            exit 1
-          fi
-
-          if git rev-parse --verify --quiet "refs/tags/${TAG_NAME}" >/dev/null; then
+          if git ls-remote --exit-code --tags origin "refs/tags/${TAG_NAME}" >/dev/null 2>&1; then
             echo "Tag '${TAG_NAME}' already exists."
             exit 1
           fi
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -a "${TAG_NAME}" "${GITHUB_SHA}" -m "Release ${TAG_NAME}"
+          git tag -a "${TAG_NAME}" "${RELEASE_SHA}" -m "Release ${TAG_NAME}"
           git push origin "${TAG_NAME}"
 
       - name: Create release notes
         env:
-          TAG_NAME: ${{ inputs.tag_name }}
           REPOSITORY: ${{ github.repository }}
+          TAG_NAME: ${{ needs.bump-version.outputs.tag_name }}
         run: |
           cat > release-notes.md <<EOF
           ## Downloads
@@ -168,10 +261,10 @@ jobs:
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG_NAME: ${{ inputs.tag_name }}
-          RELEASE_NAME: ${{ inputs.release_name }}
           DRAFT: ${{ inputs.draft }}
           PRERELEASE: ${{ inputs.prerelease }}
+          RELEASE_NAME: ${{ inputs.release_name }}
+          TAG_NAME: ${{ needs.bump-version.outputs.tag_name }}
         run: |
           title="${RELEASE_NAME:-$TAG_NAME}"
           args=(
