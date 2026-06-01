@@ -25,3 +25,6 @@ Thumbs.db
 
 # specstory
 .specstory/
+
+# Router monitor CSV files
+**/router-monitor-*.csv
