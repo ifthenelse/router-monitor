@@ -1,3 +1,4 @@
+mod background;
 mod cli;
 mod csv_writer;
 mod duration;
@@ -17,6 +18,10 @@ fn main() {
 
 fn run() -> Result<()> {
     let config = cli::parse_args()?;
+
+    if config.run_in_background {
+        return background::spawn(config);
+    }
 
     monitor::run(config)
 }

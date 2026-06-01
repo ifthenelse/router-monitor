@@ -2,7 +2,7 @@ use crate::csv_writer::{CsvLog, CsvSample};
 use crate::duration::DurationSpec;
 use crate::ping::{self, PingResult};
 use anyhow::Result;
-use chrono::Local;
+use chrono::{Duration as ChronoDuration, Local};
 use std::io::{self, Write};
 use std::net::Ipv4Addr;
 use std::path::PathBuf;
@@ -12,9 +12,12 @@ use std::time::{Duration, Instant};
 #[derive(Debug, Clone)]
 pub struct MonitorConfig {
     pub duration: DurationSpec,
+    pub duration_parts: Vec<String>,
     pub router_ip: Ipv4Addr,
     pub internet_ip: Ipv4Addr,
     pub output_path: PathBuf,
+    pub run_in_background: bool,
+    pub show_progress: bool,
     pub verbose: bool,
     pub beep: bool,
 }
@@ -22,9 +25,10 @@ pub struct MonitorConfig {
 pub fn run(config: MonitorConfig) -> Result<()> {
     let mut csv = CsvLog::create(&config.output_path)?;
     let total_samples = config.duration.sample_seconds();
+    let finish_time = finish_time(config.duration.total());
 
-    if config.verbose {
-        print_startup(&config, total_samples);
+    if config.show_progress {
+        print_startup(&config, total_samples, &finish_time);
     }
 
     let started_at = Instant::now();
@@ -42,14 +46,21 @@ pub fn run(config: MonitorConfig) -> Result<()> {
 
         csv.write_sample(&sample)?;
 
-        if config.verbose {
-            print_sample_status(sample_index + 1, total_samples, &sample);
+        if config.show_progress {
+            print_progress(
+                sample_index + 1,
+                total_samples,
+                &finish_time,
+                &sample,
+                config.verbose,
+            )?;
         }
     }
 
     sleep_until_duration_expires(started_at, config.duration.total());
 
-    if config.verbose {
+    if config.show_progress {
+        clear_progress_line()?;
         println!("Monitoring completed");
         println!("Elapsed: {:.1}s", started_at.elapsed().as_secs_f64());
     }
@@ -60,6 +71,15 @@ pub fn run(config: MonitorConfig) -> Result<()> {
     }
 
     Ok(())
+}
+
+pub fn finish_time(duration: Duration) -> String {
+    let chrono_duration =
+        ChronoDuration::from_std(duration).unwrap_or_else(|_| ChronoDuration::MAX);
+
+    (Local::now() + chrono_duration)
+        .format("%Y-%m-%d %H:%M:%S")
+        .to_string()
 }
 
 fn ping_targets(router_ip: Ipv4Addr, internet_ip: Ipv4Addr) -> (PingResult, PingResult) {
@@ -98,22 +118,14 @@ fn sleep_until(deadline: Instant) {
     }
 }
 
-fn print_startup(config: &MonitorConfig, total_samples: u64) {
+fn print_startup(config: &MonitorConfig, total_samples: u64, finish_time: &str) {
     println!("Monitoring started");
     println!("Router IP: {}", config.router_ip);
     println!("Internet IP: {}", config.internet_ip);
     println!("Duration: {}", config.duration.display());
     println!("Samples: {total_samples}");
+    println!("Will finish at: {finish_time}");
     println!("Output file: {}", config.output_path.display());
-}
-
-fn print_sample_status(sample_number: u64, total_samples: u64, sample: &CsvSample) {
-    println!(
-        "Sample {sample_number}/{total_samples} at {}: router={}, internet={}",
-        sample.timestamp,
-        status_text(sample.router),
-        status_text(sample.internet)
-    );
 }
 
 fn status_text(result: PingResult) -> String {
@@ -121,4 +133,39 @@ fn status_text(result: PingResult) -> String {
         Some(latency) => format!("ok ({latency:.2} ms)"),
         None => "timeout".to_string(),
     }
+}
+
+fn print_progress(
+    sample_number: u64,
+    total_samples: u64,
+    finish_time: &str,
+    sample: &CsvSample,
+    verbose: bool,
+) -> Result<()> {
+    let spinner = ["|", "/", "-", "\\"][(sample_number as usize) % 4];
+    let percent = (sample_number as f64 / total_samples as f64 * 100.0).min(100.0);
+    let detail = if verbose {
+        format!(
+            " | router={} internet={}",
+            status_text(sample.router),
+            status_text(sample.internet)
+        )
+    } else {
+        String::new()
+    };
+
+    print!(
+        "\r\x1b[2K{spinner} Monitoring... {:>5.1}% ({sample_number}/{total_samples}) | finishes at {finish_time}{detail}",
+        percent,
+    );
+    io::stdout().flush()?;
+
+    Ok(())
+}
+
+fn clear_progress_line() -> Result<()> {
+    print!("\r\x1b[2K");
+    io::stdout().flush()?;
+
+    Ok(())
 }

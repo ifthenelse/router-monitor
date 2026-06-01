@@ -1,3 +1,4 @@
+use crate::background;
 use crate::duration::parse_duration;
 use crate::monitor::MonitorConfig;
 use crate::validation::parse_ipv4_address;
@@ -28,7 +29,8 @@ Examples:
   router-monitor 7m
   router-monitor 4m 20s
   router-monitor 1h 30m
-  router-monitor 10m --verbose
+  router-monitor 10m --foreground
+  router-monitor 10m --foreground --verbose
   router-monitor 10m -o router.csv
   router-monitor 10m -r 192.168.0.1
   router-monitor 10m -i 8.8.8.8
@@ -67,6 +69,10 @@ struct RawCli {
     #[arg(long = "verbose")]
     verbose: bool,
 
+    /// Run in the foreground instead of starting a background process.
+    #[arg(long = "foreground")]
+    foreground: bool,
+
     /// Emit a terminal bell when monitoring completes.
     #[arg(short = 'b', long = "beep")]
     beep: bool,
@@ -89,12 +95,17 @@ impl TryFrom<RawCli> for MonitorConfig {
     fn try_from(raw: RawCli) -> Result<Self> {
         let duration = parse_duration(&raw.duration)?;
         let output_path = output_path(raw.output)?;
+        let run_in_background = !raw.foreground && !background::is_background_child();
+        let show_progress = raw.foreground;
 
         Ok(Self {
             duration,
+            duration_parts: raw.duration,
             router_ip: raw.router_ip,
             internet_ip: raw.internet_ip,
             output_path,
+            run_in_background,
+            show_progress,
             verbose: raw.verbose,
             beep: raw.beep,
         })

@@ -28,11 +28,14 @@ router-monitor 4m 20s
 router-monitor 1h 30m
 router-monitor -v
 router-monitor --version
-router-monitor 10m --verbose
+router-monitor 10m --foreground
+router-monitor 10m --foreground --verbose
 router-monitor 10m -o router.csv
 router-monitor 10m -r 192.168.0.1
 router-monitor 10m -i 8.8.8.8
 ```
+
+By default, monitoring starts in the background. The command prints the process ID, the expected finish time, and the output CSV path before returning control to the terminal. Use `--foreground` to keep it attached to the terminal and show an in-place progress animation.
 
 Supported duration units are `s`, `m`, `h`, and `d`. Decimal values are allowed, such as `3.5m`, `2.25h`, and `0.5d`.
 
