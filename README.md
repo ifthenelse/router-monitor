@@ -24,7 +24,9 @@ router-monitor 15s
 router-monitor 7m
 router-monitor 4m 20s
 router-monitor 1h 30m
-router-monitor 10m -v
+router-monitor -v
+router-monitor --version
+router-monitor 10m --verbose
 router-monitor 10m -o router.csv
 router-monitor 10m -r 192.168.0.1
 router-monitor 10m -i 8.8.8.8

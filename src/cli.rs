@@ -3,7 +3,7 @@ use crate::monitor::MonitorConfig;
 use crate::validation::parse_ipv4_address;
 use anyhow::{Context, Result};
 use chrono::Local;
-use clap::Parser;
+use clap::{ArgAction, Parser};
 use std::fs;
 use std::net::Ipv4Addr;
 use std::path::{Path, PathBuf};
@@ -21,12 +21,14 @@ Duration syntax:
 
 Examples:
 
+  router-monitor -v
+  router-monitor --version
   router-monitor 15
   router-monitor 15s
   router-monitor 7m
   router-monitor 4m 20s
   router-monitor 1h 30m
-  router-monitor 10m -v
+  router-monitor 10m --verbose
   router-monitor 10m -o router.csv
   router-monitor 10m -r 192.168.0.1
   router-monitor 10m -i 8.8.8.8
@@ -35,12 +37,14 @@ Examples:
 #[derive(Debug, Parser)]
 #[command(
     name = "router-monitor",
+    version,
+    disable_version_flag = true,
     about = "Monitor router and Internet connectivity and write measurements to CSV.",
     after_help = AFTER_HELP
 )]
 struct RawCli {
     /// Monitoring duration, such as 15, 15s, 4m 20s, or 1h 30m.
-    #[arg(required = true, value_name = "DURATION", num_args = 1..)]
+    #[arg(required_unless_present = "version", value_name = "DURATION", num_args = 1..)]
     duration: Vec<String>,
 
     /// Router IPv4 address to ping.
@@ -55,8 +59,12 @@ struct RawCli {
     #[arg(short = 'o', long = "output", value_name = "FILE_OR_DIRECTORY")]
     output: Option<PathBuf>,
 
+    /// Print the application version.
+    #[arg(short = 'v', long = "version", action = ArgAction::SetTrue)]
+    version: bool,
+
     /// Print startup, progress, and completion messages.
-    #[arg(short = 'v', long = "verbose")]
+    #[arg(long = "verbose")]
     verbose: bool,
 
     /// Emit a terminal bell when monitoring completes.
@@ -66,6 +74,12 @@ struct RawCli {
 
 pub fn parse_args() -> Result<MonitorConfig> {
     let raw = RawCli::parse();
+
+    if raw.version {
+        println!("{}", env!("CARGO_PKG_VERSION"));
+        std::process::exit(0);
+    }
+
     raw.try_into()
 }
 
