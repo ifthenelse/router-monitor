@@ -1,0 +1,12 @@
+[package]
+name = "router-monitor"
+version = "1.0.0"
+edition = "2021"
+description = "Monitor home router and Internet connectivity and write ping measurements to CSV."
+license = "MIT"
+
+[dependencies]
+anyhow = "1.0"
+chrono = "0.4"
+clap = { version = "4.5", features = ["derive"] }
+csv = "1.3"
