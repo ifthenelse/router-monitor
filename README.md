@@ -4,6 +4,8 @@
 
 [Download prebuilt executables from GitHub Releases.](../../releases)
 
+For Raspberry Pi OS, use the `aarch64-unknown-linux-musl` release on 64-bit installs and the `armv7-unknown-linux-musleabihf` release on 32-bit installs. Run `uname -m` on the Pi if you are unsure.
+
 ## Build
 
 ```bash

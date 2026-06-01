@@ -206,6 +206,49 @@ jobs:
             dist/router-monitor-x86_64-unknown-linux-musl.tar.gz.sha256
           if-no-files-found: error
 
+  build-raspberry-pi-musl:
+    name: Build Raspberry Pi OS musl
+    runs-on: ubuntu-latest
+    needs: bump-version
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - aarch64-unknown-linux-musl
+          - armv7-unknown-linux-musleabihf
+
+    steps:
+      - name: Check out release commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.bump-version.outputs.release_sha }}
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cross
+        run: cargo install cross --locked
+
+      - name: Build Raspberry Pi executable
+        run: cross build --locked --release --target "${{ matrix.target }}"
+
+      - name: Package Raspberry Pi executable
+        run: |
+          mkdir -p dist/package
+          cp "target/${{ matrix.target }}/release/${BINARY_NAME}" "dist/package/${BINARY_NAME}"
+          chmod +x "dist/package/${BINARY_NAME}"
+          tar -czf "dist/${BINARY_NAME}-${{ matrix.target }}.tar.gz" -C dist/package "${BINARY_NAME}"
+          sha256sum "dist/${BINARY_NAME}-${{ matrix.target }}.tar.gz" > "dist/${BINARY_NAME}-${{ matrix.target }}.tar.gz.sha256"
+
+      - name: Upload Raspberry Pi artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: raspberry-pi-${{ matrix.target }}
+          path: |
+            dist/router-monitor-${{ matrix.target }}.tar.gz
+            dist/router-monitor-${{ matrix.target }}.tar.gz.sha256
+          if-no-files-found: error
+
   create-release:
     name: Create tag and GitHub Release
     runs-on: ubuntu-latest
@@ -213,6 +256,7 @@ jobs:
       - bump-version
       - build-macos-universal
       - build-linux-musl
+      - build-raspberry-pi-musl
 
     steps:
       - name: Check out release commit
@@ -254,6 +298,10 @@ jobs:
           - [macOS universal SHA-256](https://github.com/${REPOSITORY}/releases/download/${TAG_NAME}/router-monitor-macos-universal.tar.gz.sha256)
           - [Linux x86_64 musl executable](https://github.com/${REPOSITORY}/releases/download/${TAG_NAME}/router-monitor-x86_64-unknown-linux-musl.tar.gz)
           - [Linux x86_64 musl SHA-256](https://github.com/${REPOSITORY}/releases/download/${TAG_NAME}/router-monitor-x86_64-unknown-linux-musl.tar.gz.sha256)
+          - [Raspberry Pi OS 64-bit executable](https://github.com/${REPOSITORY}/releases/download/${TAG_NAME}/router-monitor-aarch64-unknown-linux-musl.tar.gz)
+          - [Raspberry Pi OS 64-bit SHA-256](https://github.com/${REPOSITORY}/releases/download/${TAG_NAME}/router-monitor-aarch64-unknown-linux-musl.tar.gz.sha256)
+          - [Raspberry Pi OS 32-bit executable](https://github.com/${REPOSITORY}/releases/download/${TAG_NAME}/router-monitor-armv7-unknown-linux-musleabihf.tar.gz)
+          - [Raspberry Pi OS 32-bit SHA-256](https://github.com/${REPOSITORY}/releases/download/${TAG_NAME}/router-monitor-armv7-unknown-linux-musleabihf.tar.gz.sha256)
 
           Each archive contains a terminal executable named \`router-monitor\`.
           EOF
