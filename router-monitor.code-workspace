@@ -5,7 +5,6 @@
     },
   ],
   "settings": {
-    "explorer.excludeGitIgnore": true,
     "search.useIgnoreFiles": true,
     "search.useGlobalIgnoreFiles": true,
     "files.exclude": {
@@ -14,10 +13,10 @@
       "**/.hg": true,
       "**/CVS": true,
       "**/.DS_Store": true,
-      "**/target": true,
     },
     "search.exclude": {
       "**/target": true,
+      "**/cargo.lock": true,
       "**/coverage": true,
       "**/logs": true,
       "**/*.log": true,
@@ -25,17 +24,19 @@
       "**/.env.local": true,
       "**/.env.*.local": true,
       "jobfit/data": true,
+      "**/*.csv": true,
     },
     "files.watcherExclude": {
       "**/target/**": true,
+      "**/cargo.lock": true,
       "**/coverage/**": true,
       "**/logs/**": true,
       "jobfit/data/**": true,
       "**/.env": true,
       "**/.env.local": true,
       "**/.env.*.local": true,
+      "**/*.csv": true,
     },
-    "rust-analyzer.checkOnSave.command": "clippy",
     "specstory.cloudSync.enabled": "never",
   },
 }
