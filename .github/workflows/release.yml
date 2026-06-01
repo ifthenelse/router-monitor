@@ -45,7 +45,7 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -130,7 +130,7 @@ jobs:
 
     steps:
       - name: Check out release commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ needs.bump-version.outputs.release_sha }}
 
@@ -157,7 +157,7 @@ jobs:
           shasum -a 256 "dist/${BINARY_NAME}-macos-universal.tar.gz" > "dist/${BINARY_NAME}-macos-universal.tar.gz.sha256"
 
       - name: Upload macOS artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: macos-universal
           path: |
@@ -172,7 +172,7 @@ jobs:
 
     steps:
       - name: Check out release commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ needs.bump-version.outputs.release_sha }}
 
@@ -198,7 +198,7 @@ jobs:
           sha256sum "dist/${BINARY_NAME}-x86_64-unknown-linux-musl.tar.gz" > "dist/${BINARY_NAME}-x86_64-unknown-linux-musl.tar.gz.sha256"
 
       - name: Upload Linux artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: linux-x86_64-musl
           path: |
@@ -219,7 +219,7 @@ jobs:
 
     steps:
       - name: Check out release commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ needs.bump-version.outputs.release_sha }}
 
@@ -241,7 +241,7 @@ jobs:
           sha256sum "dist/${BINARY_NAME}-${{ matrix.target }}.tar.gz" > "dist/${BINARY_NAME}-${{ matrix.target }}.tar.gz.sha256"
 
       - name: Upload Raspberry Pi artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: raspberry-pi-${{ matrix.target }}
           path: |
@@ -260,13 +260,13 @@ jobs:
 
     steps:
       - name: Check out release commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ needs.bump-version.outputs.release_sha }}
           fetch-depth: 0
 
       - name: Download packaged executables
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
