@@ -34,6 +34,8 @@ Supported duration units are `s`, `m`, `h`, and `d`. Decimal values are allowed,
 
 By default the tool pings router IP `192.168.1.1` and Internet IP `1.1.1.1`. Use `--router-ip` and `--internet-ip` to override them.
 
+Use `-o router.csv` to write to a specific CSV file. Use `-o logs` or `-o logs/` to create/use a directory and write a default timestamped CSV file inside it.
+
 ## CSV Output
 
 If no output file is supplied, the tool creates a file named `router-monitor-YYYYMMDD-HHMMSS.csv` in the current directory.

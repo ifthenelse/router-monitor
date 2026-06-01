@@ -4,8 +4,9 @@ use crate::validation::parse_ipv4_address;
 use anyhow::{Context, Result};
 use chrono::Local;
 use clap::Parser;
+use std::fs;
 use std::net::Ipv4Addr;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 const DEFAULT_ROUTER_IP: &str = "192.168.1.1";
 const DEFAULT_INTERNET_IP: &str = "1.1.1.1";
@@ -50,8 +51,8 @@ struct RawCli {
     #[arg(short = 'i', long = "internet-ip", value_name = "IPv4", value_parser = parse_ipv4_address, default_value = DEFAULT_INTERNET_IP)]
     internet_ip: Ipv4Addr,
 
-    /// CSV output file path.
-    #[arg(short = 'o', long = "output", value_name = "FILE")]
+    /// CSV output file path or directory.
+    #[arg(short = 'o', long = "output", value_name = "FILE_OR_DIRECTORY")]
     output: Option<PathBuf>,
 
     /// Print startup, progress, and completion messages.
@@ -88,18 +89,42 @@ impl TryFrom<RawCli> for MonitorConfig {
 
 fn output_path(path: Option<PathBuf>) -> Result<PathBuf> {
     match path {
-        Some(path) => expand_tilde(path),
-        None => {
-            let filename = format!(
-                "router-monitor-{}.csv",
-                Local::now().format("%Y%m%d-%H%M%S")
-            );
-
-            std::env::current_dir()
-                .map(|directory| directory.join(filename))
-                .context("Cannot determine the current working directory.")
-        }
+        Some(path) => resolve_output_path(expand_tilde(path)?),
+        None => default_output_path_in_current_directory(),
     }
+}
+
+fn resolve_output_path(path: PathBuf) -> Result<PathBuf> {
+    if should_treat_as_directory(&path) {
+        fs::create_dir_all(&path)
+            .with_context(|| format!("Cannot create output directory '{}'.", path.display()))?;
+
+        return Ok(path.join(default_output_filename()));
+    }
+
+    Ok(path)
+}
+
+fn default_output_path_in_current_directory() -> Result<PathBuf> {
+    std::env::current_dir()
+        .map(|directory| directory.join(default_output_filename()))
+        .context("Cannot determine the current working directory.")
+}
+
+fn default_output_filename() -> String {
+    format!(
+        "router-monitor-{}.csv",
+        Local::now().format("%Y%m%d-%H%M%S")
+    )
+}
+
+fn should_treat_as_directory(path: &Path) -> bool {
+    path.is_dir() || ends_with_path_separator(path) || path.extension().is_none()
+}
+
+fn ends_with_path_separator(path: &Path) -> bool {
+    let text = path.as_os_str().to_string_lossy();
+    text.ends_with('/') || text.ends_with('\\')
 }
 
 fn expand_tilde(path: PathBuf) -> Result<PathBuf> {
@@ -120,4 +145,60 @@ fn home_dir() -> Result<PathBuf> {
     std::env::var_os("HOME")
         .map(PathBuf::from)
         .context("Cannot expand '~' because the HOME environment variable is not set.")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn explicit_csv_output_remains_a_file_path() {
+        let path = PathBuf::from("router.csv");
+
+        assert_eq!(resolve_output_path(path.clone()).unwrap(), path);
+    }
+
+    #[test]
+    fn existing_directory_receives_default_output_filename() {
+        let directory = unique_temp_path("existing-output-dir");
+        fs::create_dir_all(&directory).unwrap();
+
+        let resolved = resolve_output_path(directory.clone()).unwrap();
+
+        assert_eq!(resolved.parent(), Some(directory.as_path()));
+        assert_default_output_filename(resolved.file_name().unwrap().to_string_lossy().as_ref());
+
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn missing_directory_is_created_and_receives_default_output_filename() {
+        let directory = unique_temp_path("missing-output-dir");
+
+        let resolved = resolve_output_path(directory.clone()).unwrap();
+
+        assert!(directory.is_dir());
+        assert_eq!(resolved.parent(), Some(directory.as_path()));
+        assert_default_output_filename(resolved.file_name().unwrap().to_string_lossy().as_ref());
+
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    fn unique_temp_path(label: &str) -> PathBuf {
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+
+        std::env::temp_dir().join(format!(
+            "router-monitor-{label}-{}-{timestamp}",
+            std::process::id()
+        ))
+    }
+
+    fn assert_default_output_filename(filename: &str) {
+        assert!(filename.starts_with("router-monitor-"), "{filename}");
+        assert!(filename.ends_with(".csv"), "{filename}");
+    }
 }
