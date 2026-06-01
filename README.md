@@ -2,6 +2,8 @@
 
 `router-monitor` is a Rust CLI utility that samples home-router and Internet connectivity once per second and writes the measurements to CSV.
 
+[Download prebuilt executables from GitHub Releases.](../../releases)
+
 ## Build
 
 ```bash
