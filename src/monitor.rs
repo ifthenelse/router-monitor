@@ -1,5 +1,6 @@
 use crate::csv_writer::{CsvLog, CsvSample};
 use crate::duration::DurationSpec;
+use crate::http_monitor::{self, HttpMonitor, HttpResult};
 use crate::ping::{self, PingResult};
 use anyhow::Result;
 use chrono::{Duration as ChronoDuration, Local};
@@ -24,6 +25,7 @@ pub struct MonitorConfig {
 
 pub fn run(config: MonitorConfig) -> Result<()> {
     let mut csv = CsvLog::create(&config.output_path)?;
+    let http_monitor = HttpMonitor::new()?;
     let total_samples = config.duration.sample_seconds();
     let finish_time = finish_time(config.duration.total());
 
@@ -37,11 +39,13 @@ pub fn run(config: MonitorConfig) -> Result<()> {
         sleep_until_next_second(started_at, sample_index);
 
         let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
-        let (router, internet) = ping_targets(config.router_ip, config.internet_ip);
+        let (router, internet, router_http) =
+            measure_targets(config.router_ip, config.internet_ip, &http_monitor);
         let sample = CsvSample {
             timestamp,
             router,
             internet,
+            router_http,
         };
 
         csv.write_sample(&sample)?;
@@ -82,13 +86,19 @@ pub fn finish_time(duration: Duration) -> String {
         .to_string()
 }
 
-fn ping_targets(router_ip: Ipv4Addr, internet_ip: Ipv4Addr) -> (PingResult, PingResult) {
+fn measure_targets(
+    router_ip: Ipv4Addr,
+    internet_ip: Ipv4Addr,
+    http_monitor: &HttpMonitor,
+) -> (PingResult, PingResult, HttpResult) {
     let router = router_ip.to_string();
     let internet = internet_ip.to_string();
+    let http_monitor = http_monitor.clone();
 
     thread::scope(|scope| {
         let router_handle = scope.spawn(|| ping::ping_once(&router));
         let internet_handle = scope.spawn(|| ping::ping_once(&internet));
+        let router_http_handle = scope.spawn(|| http_monitor.measure_router(router_ip));
 
         let router_result = router_handle
             .join()
@@ -96,8 +106,11 @@ fn ping_targets(router_ip: Ipv4Addr, internet_ip: Ipv4Addr) -> (PingResult, Ping
         let internet_result = internet_handle
             .join()
             .unwrap_or_else(|_| PingResult::timeout());
+        let router_http_result = router_http_handle
+            .join()
+            .unwrap_or_else(|_| HttpResult::timeout());
 
-        (router_result, internet_result)
+        (router_result, internet_result, router_http_result)
     })
 }
 
@@ -122,6 +135,10 @@ fn print_startup(config: &MonitorConfig, total_samples: u64, finish_time: &str) 
     println!("Monitoring started");
     println!("Router IP: {}", config.router_ip);
     println!("Internet IP: {}", config.internet_ip);
+    println!(
+        "Router HTTP: {}",
+        http_monitor::router_http_url(config.router_ip)
+    );
     println!("Duration: {}", config.duration.display());
     println!("Samples: {total_samples}");
     println!("Will finish at: {finish_time}");
@@ -146,9 +163,10 @@ fn print_progress(
     let percent = (sample_number as f64 / total_samples as f64 * 100.0).min(100.0);
     let detail = if verbose {
         format!(
-            " | router={} internet={}",
+            " | router={} internet={} router_http={}",
             status_text(sample.router),
-            status_text(sample.internet)
+            status_text(sample.internet),
+            http_status_text(sample.router_http)
         )
     } else {
         String::new()
@@ -161,6 +179,13 @@ fn print_progress(
     io::stdout().flush()?;
 
     Ok(())
+}
+
+fn http_status_text(result: HttpResult) -> String {
+    match result.latency_ms {
+        Some(latency) => format!("ok ({latency:.2} ms)"),
+        None => "timeout".to_string(),
+    }
 }
 
 fn clear_progress_line() -> Result<()> {

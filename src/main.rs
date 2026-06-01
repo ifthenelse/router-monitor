@@ -3,6 +3,7 @@ mod cli;
 mod csv_writer;
 mod duration;
 mod errors;
+mod http_monitor;
 mod monitor;
 mod ping;
 mod validation;
