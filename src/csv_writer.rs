@@ -1,7 +1,7 @@
 use crate::ping::{PingResult, PingStatus};
 use anyhow::{Context, Result};
 use csv::Writer;
-use std::fs::File;
+use std::fs::{File, OpenOptions};
 use std::io::BufWriter;
 use std::path::Path;
 
@@ -56,6 +56,17 @@ impl CsvLog {
 
         Ok(())
     }
+}
+
+pub fn verify_writable(path: &Path) -> Result<()> {
+    OpenOptions::new()
+        .create(true)
+        .truncate(true)
+        .write(true)
+        .open(path)
+        .with_context(|| format!("Cannot write to output file '{}'.", path.display()))?;
+
+    Ok(())
 }
 
 fn latency_field(value: Option<f64>) -> String {
