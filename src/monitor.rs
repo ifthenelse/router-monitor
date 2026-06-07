@@ -1,6 +1,8 @@
 use crate::csv_writer::{CsvLog, CsvSample};
+use crate::dns_monitor::{self, DnsMonitor, DnsResult};
 use crate::duration::DurationSpec;
 use crate::http_monitor::{self, HttpMonitor, HttpResult};
+use crate::https_monitor::{self, HttpsMonitor, HttpsResult};
 use crate::ping::{self, PingResult};
 use anyhow::Result;
 use chrono::{Duration as ChronoDuration, Local};
@@ -26,6 +28,8 @@ pub struct MonitorConfig {
 pub fn run(config: MonitorConfig) -> Result<()> {
     let mut csv = CsvLog::create(&config.output_path)?;
     let http_monitor = HttpMonitor::new()?;
+    let dns_monitor = DnsMonitor::new();
+    let https_monitor = HttpsMonitor::new()?;
     let total_samples = config.duration.sample_seconds();
     let finish_time = finish_time(config.duration.total());
 
@@ -39,13 +43,22 @@ pub fn run(config: MonitorConfig) -> Result<()> {
         sleep_until_next_second(started_at, sample_index);
 
         let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
-        let (router, internet, router_http) =
-            measure_targets(config.router_ip, config.internet_ip, &http_monitor);
+        let (router, internet, router_http, dns_lookup, https_google, https_cloudflare) =
+            measure_targets(
+                config.router_ip,
+                config.internet_ip,
+                &http_monitor,
+                dns_monitor,
+                &https_monitor,
+            );
         let sample = CsvSample {
             timestamp,
             router,
             internet,
             router_http,
+            dns_lookup,
+            https_google,
+            https_cloudflare,
         };
 
         csv.write_sample(&sample)?;
@@ -90,15 +103,28 @@ fn measure_targets(
     router_ip: Ipv4Addr,
     internet_ip: Ipv4Addr,
     http_monitor: &HttpMonitor,
-) -> (PingResult, PingResult, HttpResult) {
+    dns_monitor: DnsMonitor,
+    https_monitor: &HttpsMonitor,
+) -> (
+    PingResult,
+    PingResult,
+    HttpResult,
+    DnsResult,
+    HttpsResult,
+    HttpsResult,
+) {
     let router = router_ip.to_string();
     let internet = internet_ip.to_string();
     let http_monitor = http_monitor.clone();
+    let https_monitor = https_monitor.clone();
 
     thread::scope(|scope| {
         let router_handle = scope.spawn(|| ping::ping_once(&router));
         let internet_handle = scope.spawn(|| ping::ping_once(&internet));
         let router_http_handle = scope.spawn(|| http_monitor.measure_router(router_ip));
+        let dns_lookup_handle = scope.spawn(move || dns_monitor.measure_google());
+        let https_google_handle = scope.spawn(|| https_monitor.measure_google());
+        let https_cloudflare_handle = scope.spawn(|| https_monitor.measure_cloudflare());
 
         let router_result = router_handle
             .join()
@@ -109,8 +135,24 @@ fn measure_targets(
         let router_http_result = router_http_handle
             .join()
             .unwrap_or_else(|_| HttpResult::timeout());
+        let dns_lookup_result = dns_lookup_handle
+            .join()
+            .unwrap_or_else(|_| DnsResult::timeout());
+        let https_google_result = https_google_handle
+            .join()
+            .unwrap_or_else(|_| HttpsResult::timeout());
+        let https_cloudflare_result = https_cloudflare_handle
+            .join()
+            .unwrap_or_else(|_| HttpsResult::timeout());
 
-        (router_result, internet_result, router_http_result)
+        (
+            router_result,
+            internet_result,
+            router_http_result,
+            dns_lookup_result,
+            https_google_result,
+            https_cloudflare_result,
+        )
     })
 }
 
@@ -139,6 +181,9 @@ fn print_startup(config: &MonitorConfig, total_samples: u64, finish_time: &str) 
         "Router HTTP: {}",
         http_monitor::router_http_url(config.router_ip)
     );
+    println!("DNS Lookup: {}", dns_monitor::DNS_HOST);
+    println!("HTTPS Google: {}", https_monitor::HTTPS_GOOGLE_URL);
+    println!("HTTPS Cloudflare: {}", https_monitor::HTTPS_CLOUDFLARE_URL);
     println!("Duration: {}", config.duration.display());
     println!("Samples: {total_samples}");
     println!("Will finish at: {finish_time}");
@@ -163,10 +208,13 @@ fn print_progress(
     let percent = (sample_number as f64 / total_samples as f64 * 100.0).min(100.0);
     let detail = if verbose {
         format!(
-            " | router={} internet={} router_http={}",
+            " | router={} internet={} router_http={} dns={} https_google={} https_cloudflare={}",
             status_text(sample.router),
             status_text(sample.internet),
-            http_status_text(sample.router_http)
+            http_status_text(sample.router_http),
+            dns_status_text(sample.dns_lookup),
+            https_status_text(sample.https_google),
+            https_status_text(sample.https_cloudflare)
         )
     } else {
         String::new()
@@ -182,6 +230,20 @@ fn print_progress(
 }
 
 fn http_status_text(result: HttpResult) -> String {
+    match result.latency_ms {
+        Some(latency) => format!("ok ({latency:.2} ms)"),
+        None => "timeout".to_string(),
+    }
+}
+
+fn dns_status_text(result: DnsResult) -> String {
+    match result.latency_ms {
+        Some(latency) => format!("ok ({latency:.2} ms)"),
+        None => "timeout".to_string(),
+    }
+}
+
+fn https_status_text(result: HttpsResult) -> String {
     match result.latency_ms {
         Some(latency) => format!("ok ({latency:.2} ms)"),
         None => "timeout".to_string(),

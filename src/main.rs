@@ -1,9 +1,11 @@
 mod background;
 mod cli;
 mod csv_writer;
+mod dns_monitor;
 mod duration;
 mod errors;
 mod http_monitor;
+mod https_monitor;
 mod monitor;
 mod ping;
 mod validation;
