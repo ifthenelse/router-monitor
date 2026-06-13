@@ -1,7 +1,8 @@
 use crate::background;
 use crate::duration::parse_duration;
+use crate::environment_monitor::{Coordinates, EnvironmentConfig};
 use crate::monitor::MonitorConfig;
-use crate::validation::parse_ipv4_address;
+use crate::validation::{parse_ipv4_address, parse_latitude, parse_longitude};
 use anyhow::{Context, Result};
 use chrono::Local;
 use clap::{ArgAction, Parser};
@@ -34,6 +35,7 @@ Examples:
   router-monitor 10m -o router.csv
   router-monitor 10m -r 192.168.0.1
   router-monitor 10m -i 8.8.8.8
+  router-monitor 12h --latitude 45.484 --longitude 9.204
 ";
 
 #[derive(Debug, Parser)]
@@ -56,6 +58,14 @@ struct RawCli {
     /// Internet IPv4 address to ping.
     #[arg(short = 'i', long = "internet-ip", value_name = "IPv4", value_parser = parse_ipv4_address, default_value = DEFAULT_INTERNET_IP)]
     internet_ip: Ipv4Addr,
+
+    /// Latitude used for weather collection. If omitted, public IP geolocation is attempted.
+    #[arg(long = "latitude", value_name = "VALUE", value_parser = parse_latitude, requires = "longitude")]
+    latitude: Option<f64>,
+
+    /// Longitude used for weather collection. If omitted, public IP geolocation is attempted.
+    #[arg(long = "longitude", value_name = "VALUE", value_parser = parse_longitude, requires = "latitude")]
+    longitude: Option<f64>,
 
     /// CSV output file path or directory.
     #[arg(short = 'o', long = "output", value_name = "FILE_OR_DIRECTORY")]
@@ -95,6 +105,15 @@ impl TryFrom<RawCli> for MonitorConfig {
     fn try_from(raw: RawCli) -> Result<Self> {
         let duration = parse_duration(&raw.duration)?;
         let output_path = output_path(raw.output)?;
+        let environment = EnvironmentConfig {
+            location: match (raw.latitude, raw.longitude) {
+                (Some(latitude), Some(longitude)) => Some(Coordinates {
+                    latitude,
+                    longitude,
+                }),
+                _ => None,
+            },
+        };
         let run_in_background = !raw.foreground && !background::is_background_child();
         let show_progress = raw.foreground;
 
@@ -103,6 +122,7 @@ impl TryFrom<RawCli> for MonitorConfig {
             duration_parts: raw.duration,
             router_ip: raw.router_ip,
             internet_ip: raw.internet_ip,
+            environment,
             output_path,
             run_in_background,
             show_progress,

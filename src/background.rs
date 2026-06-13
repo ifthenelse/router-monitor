@@ -1,4 +1,5 @@
 use crate::csv_writer;
+use crate::event_log::{self, event_log_path};
 use crate::monitor::{self, MonitorConfig};
 use anyhow::{Context, Result};
 use std::process::{Command, Stdio};
@@ -11,6 +12,8 @@ pub fn is_background_child() -> bool {
 
 pub fn spawn(config: MonitorConfig) -> Result<()> {
     csv_writer::verify_writable(&config.output_path)?;
+    let event_log_path = event_log_path(&config.output_path);
+    event_log::verify_writable(&event_log_path)?;
 
     let finish_time = monitor::finish_time(config.duration.total());
     let mut command = background_command(&config)?;
@@ -22,6 +25,7 @@ pub fn spawn(config: MonitorConfig) -> Result<()> {
     println!("Process ID: {}", child.id());
     println!("Will finish at: {finish_time}");
     println!("Output file: {}", config.output_path.display());
+    println!("Event log: {}", event_log_path.display());
 
     Ok(())
 }
@@ -43,6 +47,14 @@ fn background_command(config: &MonitorConfig) -> Result<Command> {
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
+
+    if let Some(location) = config.environment.location {
+        command
+            .arg("--latitude")
+            .arg(location.latitude.to_string())
+            .arg("--longitude")
+            .arg(location.longitude.to_string());
+    }
 
     if config.beep {
         command.arg("--beep");

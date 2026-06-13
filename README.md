@@ -33,6 +33,7 @@ router-monitor 10m --foreground --verbose
 router-monitor 10m -o router.csv
 router-monitor 10m -r 192.168.0.1
 router-monitor 10m -i 8.8.8.8
+router-monitor 12h --latitude 45.484 --longitude 9.204
 ```
 
 By default, monitoring starts in the background. The command prints the process ID, the expected finish time, and the output CSV path before returning control to the terminal. Use `--foreground` to keep it attached to the terminal and show an in-place progress animation.
@@ -45,6 +46,10 @@ The router web interface is also measured once per sample using `http://<router-
 
 Application-level connectivity is measured with a DNS lookup for `google.com`, an HTTPS request to `https://www.google.com`, and an HTTPS request to `https://1.1.1.1`. Each application-level check uses a 3-second timeout and reports only `ok` or `timeout`.
 
+Environmental data is collected every 5 minutes and cached between refreshes. By default the tool attempts city-level public IP geolocation and caches the resolved latitude/longitude, place metadata, source, and precision under the user cache directory. This does not require GPS hardware and is usually accurate enough for city-level weather correlation. Use `--latitude` and `--longitude` to provide an explicit location. If geolocation or weather lookup is unavailable, weather collection is disabled gracefully and the weather CSV cells remain empty.
+
+Weather data currently comes from Open-Meteo. The weather provider is isolated behind an internal trait so future providers or local sensors can be added without changing the monitoring loop. On Raspberry Pi systems, the event log also includes the CPU temperature in Celsius when `/sys/class/thermal/thermal_zone0/temp` is available.
+
 Use `-o router.csv` to write to a specific CSV file. Use `-o logs` or `-o logs/` to create/use a directory and write a default timestamped CSV file inside it.
 
 ## CSV Output
@@ -54,10 +59,24 @@ If no output file is supplied, the tool creates a file named `router-monitor-YYY
 The CSV header is:
 
 ```csv
-timestamp,router_ms,internet_ms,router_http_ms,dns_lookup_ms,https_google_ms,https_cloudflare_ms,router_status,internet_status,router_http_status,dns_status,https_google_status,https_cloudflare_status
+timestamp,script_version,router_ms,internet_ms,router_http_ms,dns_lookup_ms,https_google_ms,https_cloudflare_ms,outside_temperature_c,outside_relative_humidity,outside_apparent_temperature_c,router_status,internet_status,router_http_status,dns_status,https_google_status,https_cloudflare_status
 ```
 
-Successful latency values are numeric milliseconds. Failed ping, DNS, HTTP, or HTTPS checks leave the latency cell empty and write `timeout` in the matching status column.
+`script_version` is the current `router-monitor` package version. Successful latency values are numeric milliseconds. Failed ping, DNS, HTTP, or HTTPS checks leave the latency cell empty and write `timeout` in the matching status column. Weather values are written as Celsius temperature, relative humidity percentage, and apparent Celsius temperature; unavailable weather values are empty.
+
+## Event Log
+
+Each run also creates a sidecar event log next to the CSV, for example `router-monitor-20260613-193000.events.log`.
+
+When refreshed weather data indicates any of these conditions, the event log records `HIGH_HEAT_CONDITIONS`:
+
+```text
+outside_temperature_c >= 30
+outside_apparent_temperature_c >= 35
+outside_relative_humidity >= 75
+```
+
+Connectivity timeout transitions are also written with the current environmental values so later analysis can compare network instability with heat, humidity, and Raspberry Pi thermal state.
 
 ## Tests
 

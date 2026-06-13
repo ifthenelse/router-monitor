@@ -1,4 +1,7 @@
 use crate::dns_monitor::{DnsResult, DnsStatus};
+use crate::environment_monitor::{
+    format_humidity_field, format_temperature_field, EnvironmentReading,
+};
 use crate::http_monitor::{HttpResult, HttpStatus};
 use crate::https_monitor::{HttpsResult, HttpsStatus};
 use crate::ping::{PingResult, PingStatus};
@@ -8,14 +11,18 @@ use std::fs::{File, OpenOptions};
 use std::io::BufWriter;
 use std::path::Path;
 
-const HEADER: [&str; 13] = [
+const HEADER: [&str; 17] = [
     "timestamp",
+    "script_version",
     "router_ms",
     "internet_ms",
     "router_http_ms",
     "dns_lookup_ms",
     "https_google_ms",
     "https_cloudflare_ms",
+    "outside_temperature_c",
+    "outside_relative_humidity",
+    "outside_apparent_temperature_c",
     "router_status",
     "internet_status",
     "router_http_status",
@@ -32,6 +39,7 @@ pub struct CsvSample {
     pub dns_lookup: DnsResult,
     pub https_google: HttpsResult,
     pub https_cloudflare: HttpsResult,
+    pub environment: EnvironmentReading,
 }
 
 pub struct CsvLog {
@@ -61,6 +69,12 @@ impl CsvLog {
         let dns_lookup_ms = latency_field(sample.dns_lookup.latency_ms);
         let https_google_ms = latency_field(sample.https_google.latency_ms);
         let https_cloudflare_ms = latency_field(sample.https_cloudflare.latency_ms);
+        let outside_temperature_c =
+            format_temperature_field(sample.environment.outside_temperature_c);
+        let outside_relative_humidity =
+            format_humidity_field(sample.environment.outside_relative_humidity);
+        let outside_apparent_temperature_c =
+            format_temperature_field(sample.environment.outside_apparent_temperature_c);
         let router_status = status_field(sample.router.status);
         let internet_status = status_field(sample.internet.status);
         let router_http_status = http_status_field(sample.router_http.status);
@@ -70,12 +84,16 @@ impl CsvLog {
 
         self.writer.write_record([
             sample.timestamp.as_str(),
+            env!("CARGO_PKG_VERSION"),
             router_ms.as_str(),
             internet_ms.as_str(),
             router_http_ms.as_str(),
             dns_lookup_ms.as_str(),
             https_google_ms.as_str(),
             https_cloudflare_ms.as_str(),
+            outside_temperature_c.as_str(),
+            outside_relative_humidity.as_str(),
+            outside_apparent_temperature_c.as_str(),
             router_status,
             internet_status,
             router_http_status,
@@ -153,6 +171,12 @@ mod tests {
             dns_lookup: DnsResult::ok(7.93),
             https_google: HttpsResult::timeout(),
             https_cloudflare: HttpsResult::ok(18.11),
+            environment: EnvironmentReading {
+                outside_temperature_c: Some(31.4),
+                outside_relative_humidity: Some(68.0),
+                outside_apparent_temperature_c: Some(37.8),
+                raspberry_pi_temperature_c: Some(54.2),
+            },
         };
 
         {
@@ -164,7 +188,10 @@ mod tests {
 
         assert_eq!(
             content,
-            "timestamp,router_ms,internet_ms,router_http_ms,dns_lookup_ms,https_google_ms,https_cloudflare_ms,router_status,internet_status,router_http_status,dns_status,https_google_status,https_cloudflare_status\n2026-06-01 18:00:03,0.70,8.20,2.91,7.93,,18.11,ok,ok,ok,ok,timeout,ok\n"
+            format!(
+                "timestamp,script_version,router_ms,internet_ms,router_http_ms,dns_lookup_ms,https_google_ms,https_cloudflare_ms,outside_temperature_c,outside_relative_humidity,outside_apparent_temperature_c,router_status,internet_status,router_http_status,dns_status,https_google_status,https_cloudflare_status\n2026-06-01 18:00:03,{},0.70,8.20,2.91,7.93,,18.11,31.4,68,37.8,ok,ok,ok,ok,timeout,ok\n",
+                env!("CARGO_PKG_VERSION")
+            )
         );
 
         fs::remove_file(path).unwrap();
