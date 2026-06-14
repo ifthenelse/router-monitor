@@ -4,9 +4,6 @@ on:
   push:
   pull_request:
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-
 jobs:
   rust:
     name: ${{ matrix.name }}
@@ -26,11 +23,11 @@ jobs:
               rustup target add x86_64-apple-darwin
               cargo check --locked --target x86_64-apple-darwin
           - name: Windows
-            os: windows-latest
+            os: windows-2025-vs2026
             command: cargo test --locked
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: ${{ matrix.command }}
@@ -51,7 +48,7 @@ jobs:
             setup: pacman -Sy --noconfirm --needed base-devel rust pkgconf ca-certificates
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - run: |
           docker run --rm \
             -v "$PWD:/work" \
