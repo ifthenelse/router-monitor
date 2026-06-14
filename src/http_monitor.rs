@@ -26,6 +26,9 @@ impl HttpMonitor {
             // Router login pages commonly redirect. Redirects are useful in a
             // browser, but here the first valid response is the signal we need.
             .redirect(reqwest::redirect::Policy::none())
+            // Router checks must be direct. CI and user shells may define HTTP
+            // proxy variables that would otherwise intercept local/router URLs.
+            .no_proxy()
             .connect_timeout(HTTP_TIMEOUT)
             .timeout(HTTP_TIMEOUT)
             .build()?;
@@ -79,8 +82,8 @@ pub fn router_http_url(router_ip: Ipv4Addr) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
-    use std::net::{Ipv4Addr, TcpListener};
+    use std::io::{Read, Write};
+    use std::net::{Ipv4Addr, SocketAddr, TcpListener};
     use std::thread;
 
     #[test]
@@ -93,7 +96,7 @@ mod tests {
 
     #[test]
     fn treats_any_http_response_as_success() {
-        let listener = match TcpListener::bind("127.0.0.1:0") {
+        let listener = match TcpListener::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, 0))) {
             Ok(listener) => listener,
             Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
                 eprintln!("skipping loopback HTTP test because listener bind is denied");
@@ -105,9 +108,17 @@ mod tests {
 
         thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
+            let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
+
+            let mut request = [0_u8; 512];
+            let _ = stream.read(&mut request);
+
             stream
-                .write_all(b"HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\n\r\n")
+                .write_all(
+                    b"HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                )
                 .unwrap();
+            stream.flush().unwrap();
         });
 
         let monitor = HttpMonitor::new().unwrap();
