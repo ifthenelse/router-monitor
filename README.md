@@ -94,7 +94,7 @@ router-monitor 12h --wifi-interface wlan0
 
 ### Session Monitors
 
-Change the persistent TCP target or WebSocket endpoint.
+Change the TCP reachability target or WebSocket endpoint.
 
 ```bash
 router-monitor 12h --tcp-target 1.1.1.1:443
@@ -136,7 +136,7 @@ Application-level connectivity is measured with a DNS lookup for `google.com`, a
 
 The default router and Internet ping checks use the operating system's active/default network path, so an Ethernet-connected device is checked without extra options. On Linux, if a connected WiFi interface is also active, the monitor automatically records WiFi telemetry and performs router/Internet pings bound to that WiFi interface. Pass `--wifi-interface wlan0` to monitor a specific WiFi interface instead of auto-detecting it.
 
-The persistent TCP monitor is enabled by default and connects to `1.1.1.1:443`; use `--tcp-target HOST:PORT` to change it. WebSocket monitoring is enabled by default and connects to the public echo server `wss://echo.websocket.org`; use `--websocket-url URL` to change it.
+The TCP monitor is enabled by default and checks reachability of `1.1.1.1:443`; use `--tcp-target HOST:PORT` to change it. WebSocket monitoring is enabled by default and connects to the public echo server `wss://echo.websocket.org`; use `--websocket-url URL` to change it.
 
 The client-link monitor is isolated behind a trait so future platform-specific providers can emit the same WiFi/session metric shape without changing CSV or correlation logic.
 
@@ -185,7 +185,7 @@ The CSV header is:
 timestamp,script_version,router_ms,internet_ms,router_http_ms,dns_lookup_ms,https_google_ms,https_cloudflare_ms,outside_temperature_c,outside_relative_humidity,outside_apparent_temperature_c,wifi_interface,wifi_signal_dbm,wifi_link_quality,wifi_tx_bitrate,wifi_rx_bitrate,wifi_router_ms,wifi_internet_ms,wifi_disconnect_count,wifi_reconnect_count,wifi_associated_bssid,wifi_channel,tcp_connected,tcp_disconnect_count,tcp_reconnect_count,tcp_session_uptime_seconds,last_tcp_disconnect,websocket_connected,websocket_disconnect_count,websocket_reconnect_count,websocket_uptime_seconds,last_websocket_disconnect,suspected_failure_layer,router_status,internet_status,router_http_status,dns_status,https_google_status,https_cloudflare_status
 ```
 
-`script_version` is the current `router-monitor` package version. Successful latency values are numeric milliseconds. Failed ping, DNS, HTTP, HTTPS, or WiFi-bound ping checks leave the latency cell empty and write `timeout` in the matching status column when a status column exists. `wifi_interface` records the detected or configured WiFi interface when WiFi telemetry is active. Weather values are written as Celsius temperature, relative humidity percentage, and apparent Celsius temperature; unavailable weather values are empty.
+`script_version` is the current `router-monitor` package version. Successful latency values are numeric milliseconds. Failed ping, DNS, HTTP, HTTPS, or WiFi-bound ping checks leave the latency cell empty and write `timeout` in the matching status column when a status column exists. `wifi_interface` records the detected or configured WiFi interface when WiFi telemetry is active. `tcp_session_uptime_seconds` records the current TCP reachability streak duration. Weather values are written as Celsius temperature, relative humidity percentage, and apparent Celsius temperature; unavailable weather values are empty.
 
 `suspected_failure_layer` is one of:
 
