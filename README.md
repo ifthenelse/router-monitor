@@ -43,6 +43,32 @@ router-monitor 12h --websocket-url wss://example.com/socket
 
 By default, monitoring starts in the background. The command prints the process ID, the expected finish time, and the output CSV path before returning control to the terminal. Use `--foreground` to keep it attached to the terminal and show an in-place progress animation.
 
+## Stopping a Run
+
+`router-monitor` does not install an operating-system service by default. A background run is a normal process, and the startup message prints the process ID:
+
+```text
+Monitoring started in background
+Process ID: 12345
+```
+
+If the monitor is running in the foreground, press `Ctrl+C` in the terminal where it is running.
+
+If the monitor is running in the background, stop it with the printed process ID:
+
+| Platform                    | Stop by process ID             | Find a running monitor if the PID was lost |
+| --------------------------- | ------------------------------ | ------------------------------------------ |
+| Debian, Ubuntu, Arch Linux  | `kill 12345`                   | `pgrep -af router-monitor`                 |
+| macOS                       | `kill 12345`                   | `pgrep -af router-monitor`                 |
+| Windows PowerShell          | `Stop-Process -Id 12345`       | `Get-Process router-monitor`               |
+| Windows Command Prompt      | `taskkill /PID 12345`          | `tasklist \| findstr router-monitor`       |
+
+On Linux systems where you have wrapped the binary in a systemd unit, stop that wrapper instead:
+
+```bash
+sudo systemctl stop router-monitor
+```
+
 Supported duration units are `s`, `m`, `h`, and `d`. Decimal values are allowed, such as `3.5m`, `2.25h`, and `0.5d`.
 
 By default the tool pings router IP `192.168.1.1` and Internet IP `1.1.1.1`. Use `--router-ip` and `--internet-ip` to override them.
