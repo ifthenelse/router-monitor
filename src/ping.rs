@@ -38,8 +38,20 @@ impl PingStatus {
 }
 
 pub fn ping_once(host: &str) -> PingResult {
+    ping_once_with_interface(host, None)
+}
+
+pub fn ping_once_via_interface(host: &str, interface: &str) -> PingResult {
+    ping_once_with_interface(host, Some(interface))
+}
+
+fn ping_once_with_interface(host: &str, interface: Option<&str>) -> PingResult {
+    if interface.is_some() && !interface_ping_supported() {
+        return PingResult::timeout();
+    }
+
     let mut command = Command::new("ping");
-    command.args(ping_args(host));
+    command.args(ping_args(host, interface));
 
     let output = match command.output() {
         Ok(output) => output,
@@ -57,27 +69,65 @@ pub fn ping_once(host: &str) -> PingResult {
         .unwrap_or_else(PingResult::timeout)
 }
 
-#[cfg(target_os = "linux")]
-fn ping_args(host: &str) -> Vec<&str> {
-    // Linux and Raspberry Pi OS use seconds for the -W timeout value.
-    vec!["-c", "1", "-n", "-W", "1", host]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PingPlatform {
+    Linux,
+    MacOs,
+    Windows,
+    OtherUnix,
 }
 
-#[cfg(target_os = "macos")]
-fn ping_args(host: &str) -> Vec<&str> {
-    // macOS uses milliseconds for the -W timeout value.
-    vec!["-c", "1", "-n", "-W", "1000", host]
+fn ping_args(host: &str, interface: Option<&str>) -> Vec<String> {
+    ping_args_for_platform(host, interface, current_platform())
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "macos")))]
-fn ping_args(host: &str) -> Vec<&str> {
-    vec!["-c", "1", host]
+fn current_platform() -> PingPlatform {
+    if cfg!(target_os = "linux") {
+        PingPlatform::Linux
+    } else if cfg!(target_os = "macos") {
+        PingPlatform::MacOs
+    } else if cfg!(target_os = "windows") {
+        PingPlatform::Windows
+    } else {
+        PingPlatform::OtherUnix
+    }
+}
+
+fn interface_ping_supported() -> bool {
+    current_platform() == PingPlatform::Linux
+}
+
+fn ping_args_for_platform(
+    host: &str,
+    interface: Option<&str>,
+    platform: PingPlatform,
+) -> Vec<String> {
+    let mut args = match platform {
+        PingPlatform::Linux => vec!["-c", "1", "-n", "-W", "1"],
+        // macOS uses milliseconds for the -W timeout value.
+        PingPlatform::MacOs => vec!["-c", "1", "-n", "-W", "1000"],
+        PingPlatform::Windows => vec!["-n", "1", "-w", "1000"],
+        PingPlatform::OtherUnix => vec!["-c", "1"],
+    }
+    .into_iter()
+    .map(String::from)
+    .collect::<Vec<_>>();
+
+    if platform == PingPlatform::Linux {
+        if let Some(interface) = interface {
+            args.push("-I".to_string());
+            args.push(interface.to_string());
+        }
+    }
+
+    args.push(host.to_string());
+    args
 }
 
 fn parse_latency_ms(output: &str) -> Option<f64> {
-    output
-        .lines()
-        .find_map(|line| parse_latency_from_line(line, "time="))
+    output.lines().find_map(|line| {
+        parse_latency_from_line(line, "time=").or_else(|| parse_sub_ms_latency(line))
+    })
 }
 
 fn parse_latency_from_line(line: &str, marker: &str) -> Option<f64> {
@@ -90,6 +140,14 @@ fn parse_latency_from_line(line: &str, marker: &str) -> Option<f64> {
         .last()?;
 
     value[..end].parse::<f64>().ok()
+}
+
+fn parse_sub_ms_latency(line: &str) -> Option<f64> {
+    if line.contains("time<1ms") || line.contains("time<1 ms") {
+        Some(0.5)
+    } else {
+        None
+    }
 }
 
 #[cfg(test)]
@@ -109,7 +167,43 @@ mod tests {
     }
 
     #[test]
+    fn parses_windows_latency_output() {
+        let output = "Reply from 1.1.1.1: bytes=32 time=8ms TTL=57";
+        assert_eq!(parse_latency_ms(output), Some(8.0));
+    }
+
+    #[test]
+    fn parses_windows_sub_millisecond_latency_output() {
+        let output = "Reply from 192.168.1.1: bytes=32 time<1ms TTL=64";
+        assert_eq!(parse_latency_ms(output), Some(0.5));
+    }
+
+    #[test]
     fn returns_none_when_latency_is_missing() {
         assert_eq!(parse_latency_ms("Request timeout for icmp_seq 0"), None);
+    }
+
+    #[test]
+    fn builds_linux_ping_args_with_optional_interface() {
+        assert_eq!(
+            ping_args_for_platform("1.1.1.1", Some("wlan0"), PingPlatform::Linux),
+            vec!["-c", "1", "-n", "-W", "1", "-I", "wlan0", "1.1.1.1"]
+        );
+    }
+
+    #[test]
+    fn builds_macos_ping_args_without_linux_interface_binding() {
+        assert_eq!(
+            ping_args_for_platform("1.1.1.1", Some("en0"), PingPlatform::MacOs),
+            vec!["-c", "1", "-n", "-W", "1000", "1.1.1.1"]
+        );
+    }
+
+    #[test]
+    fn builds_windows_ping_args() {
+        assert_eq!(
+            ping_args_for_platform("1.1.1.1", Some("Wi-Fi"), PingPlatform::Windows),
+            vec!["-n", "1", "-w", "1000", "1.1.1.1"]
+        );
     }
 }

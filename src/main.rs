@@ -1,5 +1,6 @@
 mod background;
 mod cli;
+mod correlation_engine;
 mod csv_writer;
 mod dns_monitor;
 mod duration;
@@ -10,7 +11,10 @@ mod http_monitor;
 mod https_monitor;
 mod monitor;
 mod ping;
+mod tcp_monitor;
 mod validation;
+mod websocket_monitor;
+mod wifi_monitor;
 
 use anyhow::Result;
 

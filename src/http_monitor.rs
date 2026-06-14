@@ -93,7 +93,14 @@ mod tests {
 
     #[test]
     fn treats_any_http_response_as_success() {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let listener = match TcpListener::bind("127.0.0.1:0") {
+            Ok(listener) => listener,
+            Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
+                eprintln!("skipping loopback HTTP test because listener bind is denied");
+                return;
+            }
+            Err(error) => panic!("failed to bind loopback listener: {error}"),
+        };
         let address = listener.local_addr().unwrap();
 
         thread::spawn(move || {

@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  rust:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Ubuntu
+            os: ubuntu-latest
+            command: cargo test --locked
+          - name: macOS ARM64
+            os: macos-14
+            command: cargo test --locked
+          - name: macOS x86_64
+            os: macos-13
+            command: cargo test --locked
+          - name: Windows
+            os: windows-latest
+            command: cargo test --locked
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: ${{ matrix.command }}
+
+  linux-distributions:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Debian
+            image: rust:bookworm
+            setup: apt-get update && apt-get install -y --no-install-recommends pkg-config ca-certificates
+          - name: Arch
+            image: archlinux:latest
+            setup: pacman -Syu --noconfirm rust cargo pkgconf ca-certificates
+
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          docker run --rm \
+            -v "$PWD:/work" \
+            -w /work \
+            ${{ matrix.image }} \
+            sh -lc '${{ matrix.setup }} && cargo test --locked'

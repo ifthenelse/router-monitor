@@ -2,7 +2,10 @@ use crate::background;
 use crate::duration::parse_duration;
 use crate::environment_monitor::{Coordinates, EnvironmentConfig};
 use crate::monitor::MonitorConfig;
+use crate::tcp_monitor::TcpConfig;
 use crate::validation::{parse_ipv4_address, parse_latitude, parse_longitude};
+use crate::websocket_monitor::{WebSocketConfig, DEFAULT_WEBSOCKET_URL};
+use crate::wifi_monitor::WifiConfig;
 use anyhow::{Context, Result};
 use chrono::Local;
 use clap::{ArgAction, Parser};
@@ -36,6 +39,9 @@ Examples:
   router-monitor 10m -r 192.168.0.1
   router-monitor 10m -i 8.8.8.8
   router-monitor 12h --latitude 45.484 --longitude 9.204
+  router-monitor 12h --wifi-interface wlan0
+  router-monitor 12h --tcp-target 1.1.1.1:443
+  router-monitor 12h --websocket-url wss://example.com/socket
 ";
 
 #[derive(Debug, Parser)]
@@ -66,6 +72,22 @@ struct RawCli {
     /// Longitude used for weather collection. If omitted, public IP geolocation is attempted.
     #[arg(long = "longitude", value_name = "VALUE", value_parser = parse_longitude, requires = "latitude")]
     longitude: Option<f64>,
+
+    /// WiFi interface to monitor, such as wlan0. Disabled if omitted.
+    #[arg(long = "wifi-interface", value_name = "IFACE")]
+    wifi_interface: Option<String>,
+
+    /// Persistent TCP monitor target.
+    #[arg(
+        long = "tcp-target",
+        value_name = "HOST:PORT",
+        default_value = "1.1.1.1:443"
+    )]
+    tcp_target: String,
+
+    /// Persistent WebSocket monitor URL.
+    #[arg(long = "websocket-url", value_name = "URL", default_value = DEFAULT_WEBSOCKET_URL)]
+    websocket_url: String,
 
     /// CSV output file path or directory.
     #[arg(short = 'o', long = "output", value_name = "FILE_OR_DIRECTORY")]
@@ -114,6 +136,13 @@ impl TryFrom<RawCli> for MonitorConfig {
                 _ => None,
             },
         };
+        let wifi = raw.wifi_interface.map(WifiConfig::new);
+        let tcp = TcpConfig {
+            target: raw.tcp_target,
+        };
+        let websocket = WebSocketConfig {
+            url: Some(raw.websocket_url),
+        };
         let run_in_background = !raw.foreground && !background::is_background_child();
         let show_progress = raw.foreground;
 
@@ -123,6 +152,9 @@ impl TryFrom<RawCli> for MonitorConfig {
             router_ip: raw.router_ip,
             internet_ip: raw.internet_ip,
             environment,
+            wifi,
+            tcp,
+            websocket,
             output_path,
             run_in_background,
             show_progress,

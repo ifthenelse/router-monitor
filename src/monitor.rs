@@ -1,3 +1,4 @@
+use crate::correlation_engine::{self, SuspectedFailureLayer};
 use crate::csv_writer::{CsvLog, CsvSample};
 use crate::dns_monitor::{self, DnsMonitor, DnsResult};
 use crate::duration::DurationSpec;
@@ -8,6 +9,9 @@ use crate::event_log::{event_log_path, EventLog};
 use crate::http_monitor::{self, HttpMonitor, HttpResult};
 use crate::https_monitor::{self, HttpsMonitor, HttpsResult};
 use crate::ping::{self, PingResult};
+use crate::tcp_monitor::{TcpConfig, TcpMonitor};
+use crate::websocket_monitor::{WebSocketConfig, WebSocketMonitor};
+use crate::wifi_monitor::{WifiConfig, WifiMonitor, WifiSample};
 use anyhow::Result;
 use chrono::{Duration as ChronoDuration, Local};
 use std::io::{self, Write};
@@ -23,6 +27,9 @@ pub struct MonitorConfig {
     pub router_ip: Ipv4Addr,
     pub internet_ip: Ipv4Addr,
     pub environment: crate::environment_monitor::EnvironmentConfig,
+    pub wifi: Option<WifiConfig>,
+    pub tcp: TcpConfig,
+    pub websocket: WebSocketConfig,
     pub output_path: PathBuf,
     pub run_in_background: bool,
     pub show_progress: bool,
@@ -38,7 +45,11 @@ pub fn run(config: MonitorConfig) -> Result<()> {
     let dns_monitor = DnsMonitor::new();
     let https_monitor = HttpsMonitor::new()?;
     let mut environment_monitor = EnvironmentMonitor::new(config.environment);
+    let mut wifi_monitor = config.wifi.clone().map(WifiMonitor::new);
+    let mut tcp_monitor = TcpMonitor::new(config.tcp.clone());
+    let mut websocket_monitor = WebSocketMonitor::new(config.websocket.clone());
     let mut previous_statuses = None;
+    let mut previous_failure_layer = SuspectedFailureLayer::None;
     let total_samples = config.duration.sample_seconds();
     let finish_time = finish_time(config.duration.total());
 
@@ -52,6 +63,7 @@ pub fn run(config: MonitorConfig) -> Result<()> {
         sleep_until_next_second(started_at, sample_index);
 
         let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        let now = Instant::now();
         let environment_sample = environment_monitor.sample(Instant::now());
         let (router, internet, router_http, dns_lookup, https_google, https_cloudflare) =
             measure_targets(
@@ -61,6 +73,12 @@ pub fn run(config: MonitorConfig) -> Result<()> {
                 dns_monitor,
                 &https_monitor,
             );
+        let wifi = wifi_monitor
+            .as_mut()
+            .map(|monitor| monitor.sample(config.router_ip, config.internet_ip))
+            .unwrap_or_else(WifiSample::disabled);
+        let tcp = tcp_monitor.sample(&timestamp, now);
+        let websocket = websocket_monitor.sample(&timestamp, now);
         let sample = CsvSample {
             timestamp: timestamp.clone(),
             router,
@@ -70,7 +88,13 @@ pub fn run(config: MonitorConfig) -> Result<()> {
             https_google,
             https_cloudflare,
             environment: environment_sample.reading,
+            wifi,
+            tcp,
+            websocket,
+            suspected_failure_layer: SuspectedFailureLayer::None,
         };
+        let mut sample = sample;
+        sample.suspected_failure_layer = correlation_engine::classify_sample(&sample);
 
         csv.write_sample(&sample)?;
 
@@ -81,6 +105,15 @@ pub fn run(config: MonitorConfig) -> Result<()> {
         }
 
         record_connectivity_events(&mut event_log, &timestamp, &sample, &mut previous_statuses)?;
+        record_wifi_events(&mut event_log, &timestamp, &sample)?;
+        record_tcp_events(&mut event_log, &timestamp, &sample)?;
+        record_websocket_events(&mut event_log, &timestamp, &sample)?;
+        record_correlation_event(
+            &mut event_log,
+            &timestamp,
+            &sample,
+            &mut previous_failure_layer,
+        )?;
 
         if config.show_progress {
             print_progress(
@@ -283,6 +316,53 @@ fn write_timeout_transition(
     Ok(())
 }
 
+fn record_wifi_events(event_log: &mut EventLog, timestamp: &str, sample: &CsvSample) -> Result<()> {
+    for event in &sample.wifi.events {
+        event_log.write_connectivity_event(timestamp, &event.event_text(), sample.environment)?;
+    }
+
+    Ok(())
+}
+
+fn record_tcp_events(event_log: &mut EventLog, timestamp: &str, sample: &CsvSample) -> Result<()> {
+    for event in &sample.tcp.events {
+        event_log.write_connectivity_event(timestamp, event.event_text(), sample.environment)?;
+    }
+
+    Ok(())
+}
+
+fn record_websocket_events(
+    event_log: &mut EventLog,
+    timestamp: &str,
+    sample: &CsvSample,
+) -> Result<()> {
+    for event in &sample.websocket.events {
+        event_log.write_connectivity_event(timestamp, event.event_text(), sample.environment)?;
+    }
+
+    Ok(())
+}
+
+fn record_correlation_event(
+    event_log: &mut EventLog,
+    timestamp: &str,
+    sample: &CsvSample,
+    previous_failure_layer: &mut SuspectedFailureLayer,
+) -> Result<()> {
+    let current = sample.suspected_failure_layer;
+
+    if current != *previous_failure_layer {
+        if let Some(event) = current.event_text() {
+            event_log.write_connectivity_event(timestamp, event, sample.environment)?;
+        }
+
+        *previous_failure_layer = current;
+    }
+
+    Ok(())
+}
+
 fn sleep_until_next_second(started_at: Instant, sample_index: u64) {
     let scheduled_at = started_at + Duration::from_secs(sample_index);
     sleep_until(scheduled_at);
@@ -319,6 +399,15 @@ fn print_startup(
     match environment_monitor.location() {
         Some(location) => println!("Weather: enabled ({})", location.display_label()),
         None => println!("Weather: disabled (location unavailable)"),
+    }
+    match &config.wifi {
+        Some(wifi) => println!("WiFi monitor: enabled ({})", wifi.interface),
+        None => println!("WiFi monitor: disabled"),
+    }
+    println!("TCP monitor: {}", config.tcp.target);
+    match &config.websocket.url {
+        Some(url) => println!("WebSocket monitor: {url}"),
+        None => println!("WebSocket monitor: disabled"),
     }
     println!("Duration: {}", config.duration.display());
     println!("Samples: {total_samples}");

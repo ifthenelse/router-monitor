@@ -56,6 +56,16 @@ fn background_command(config: &MonitorConfig) -> Result<Command> {
             .arg(location.longitude.to_string());
     }
 
+    if let Some(wifi) = &config.wifi {
+        command.arg("--wifi-interface").arg(&wifi.interface);
+    }
+
+    command.arg("--tcp-target").arg(&config.tcp.target);
+
+    if let Some(url) = &config.websocket.url {
+        command.arg("--websocket-url").arg(url);
+    }
+
     if config.beep {
         command.arg("--beep");
     }
