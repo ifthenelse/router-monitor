@@ -81,3 +81,79 @@ fn background_command(config: &MonitorConfig) -> Result<Command> {
 
     Ok(command)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::duration::parse_duration;
+    use crate::environment_monitor::EnvironmentConfig;
+    use crate::tcp_monitor::TcpConfig;
+    use crate::websocket_monitor::{WebSocketConfig, DEFAULT_WEBSOCKET_URL};
+    use crate::wifi_monitor::WifiConfig;
+    use std::ffi::OsStr;
+    use std::net::Ipv4Addr;
+    use std::path::PathBuf;
+
+    #[test]
+    fn background_command_keeps_explicit_wifi_interface_override() {
+        let config = test_config(WifiConfig::new("wlan0".to_string()));
+        let command = background_command(&config).unwrap();
+        let args = command_args(&command);
+
+        assert!(args.contains(&"--wifi-interface".to_string()));
+        assert!(args.contains(&"wlan0".to_string()));
+    }
+
+    #[test]
+    fn background_command_keeps_wifi_auto_detection_implicit() {
+        let config = test_config(WifiConfig::auto());
+        let command = background_command(&config).unwrap();
+        let args = command_args(&command);
+
+        assert!(!args.contains(&"--wifi-interface".to_string()));
+    }
+
+    #[test]
+    fn background_command_marks_child_process() {
+        let config = test_config(WifiConfig::auto());
+        let command = background_command(&config).unwrap();
+
+        assert_eq!(
+            command.get_envs().find_map(|(name, value)| {
+                (name == OsStr::new(BACKGROUND_CHILD_ENV))
+                    .then(|| value.map(|value| value.to_string_lossy().into_owned()))
+                    .flatten()
+            }),
+            Some("1".to_string())
+        );
+    }
+
+    fn test_config(wifi: WifiConfig) -> MonitorConfig {
+        MonitorConfig {
+            duration: parse_duration(&["10m".to_string()]).unwrap(),
+            duration_parts: vec!["10m".to_string()],
+            router_ip: Ipv4Addr::new(192, 168, 1, 1),
+            internet_ip: Ipv4Addr::new(1, 1, 1, 1),
+            environment: EnvironmentConfig { location: None },
+            wifi,
+            tcp: TcpConfig {
+                target: "1.1.1.1:443".to_string(),
+            },
+            websocket: WebSocketConfig {
+                url: Some(DEFAULT_WEBSOCKET_URL.to_string()),
+            },
+            output_path: PathBuf::from("router-monitor-test.csv"),
+            run_in_background: true,
+            show_progress: false,
+            verbose: false,
+            beep: false,
+        }
+    }
+
+    fn command_args(command: &Command) -> Vec<String> {
+        command
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect()
+    }
+}
