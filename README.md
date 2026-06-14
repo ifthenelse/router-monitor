@@ -6,6 +6,8 @@
 
 For Raspberry Pi OS, use the `aarch64-unknown-linux-musl` release on 64-bit installs and the `armv7-unknown-linux-musleabihf` release on 32-bit installs. Run `uname -m` on the Pi if you are unsure.
 
+[![CI](https://github.com/ifthenelse/router-monitor/actions/workflows/ci.yml/badge.svg)](https://github.com/ifthenelse/router-monitor/actions/workflows/ci.yml)
+
 ## Build
 
 ```bash
@@ -65,32 +67,32 @@ Use `-o router.csv` to write to a specific CSV file. Use `-o logs` or `-o logs/`
 
 ## Defaults
 
-| Setting | Default |
-| --- | --- |
-| Run mode | Background process |
-| Sample interval | 1 second |
-| Duration syntax without units | Seconds |
-| Router IP | `192.168.1.1` |
-| Internet ping IP | `1.1.1.1` |
-| Router HTTP URL | `http://<router-ip>` |
-| DNS lookup host | `google.com` |
-| HTTPS Google URL | `https://www.google.com` |
-| HTTPS Cloudflare URL | `https://1.1.1.1` |
-| HTTP/DNS/HTTPS timeout | 3 seconds |
-| TCP monitor target | `1.1.1.1:443` |
-| WebSocket monitor URL | `wss://echo.websocket.org` |
-| WebSocket heartbeat interval | 15 seconds |
-| WiFi monitoring | Disabled unless `--wifi-interface` is supplied |
-| WiFi low signal threshold | `-75 dBm` |
-| WiFi low link-quality threshold | `35` |
-| Weather provider | Open-Meteo |
-| Weather refresh interval | 5 minutes |
-| Location | City-level public IP geolocation, unless `--latitude` and `--longitude` are supplied |
-| Output CSV | `router-monitor-YYYYMMDD-HHMMSS.csv` in the current directory |
-| Event log | Same path as CSV with `.events.log` extension |
-| Verbose output | Disabled |
-| Completion beep | Disabled |
-| Foreground mode | Disabled unless `--foreground` is supplied |
+| Setting                         | Default                                                                              |
+| ------------------------------- | ------------------------------------------------------------------------------------ |
+| Run mode                        | Background process                                                                   |
+| Sample interval                 | 1 second                                                                             |
+| Duration syntax without units   | Seconds                                                                              |
+| Router IP                       | `192.168.1.1`                                                                        |
+| Internet ping IP                | `1.1.1.1`                                                                            |
+| Router HTTP URL                 | `http://<router-ip>`                                                                 |
+| DNS lookup host                 | `google.com`                                                                         |
+| HTTPS Google URL                | `https://www.google.com`                                                             |
+| HTTPS Cloudflare URL            | `https://1.1.1.1`                                                                    |
+| HTTP/DNS/HTTPS timeout          | 3 seconds                                                                            |
+| TCP monitor target              | `1.1.1.1:443`                                                                        |
+| WebSocket monitor URL           | `wss://echo.websocket.org`                                                           |
+| WebSocket heartbeat interval    | 15 seconds                                                                           |
+| WiFi monitoring                 | Disabled unless `--wifi-interface` is supplied                                       |
+| WiFi low signal threshold       | `-75 dBm`                                                                            |
+| WiFi low link-quality threshold | `35`                                                                                 |
+| Weather provider                | Open-Meteo                                                                           |
+| Weather refresh interval        | 5 minutes                                                                            |
+| Location                        | City-level public IP geolocation, unless `--latitude` and `--longitude` are supplied |
+| Output CSV                      | `router-monitor-YYYYMMDD-HHMMSS.csv` in the current directory                        |
+| Event log                       | Same path as CSV with `.events.log` extension                                        |
+| Verbose output                  | Disabled                                                                             |
+| Completion beep                 | Disabled                                                                             |
+| Foreground mode                 | Disabled unless `--foreground` is supplied                                           |
 
 ## CSV Output
 
