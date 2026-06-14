@@ -4,10 +4,14 @@ on:
   push:
   pull_request:
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   rust:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -15,12 +19,12 @@ jobs:
           - name: Ubuntu
             os: ubuntu-latest
             command: cargo test --locked
-          - name: macOS ARM64
+          - name: macOS universal
             os: macos-14
-            command: cargo test --locked
-          - name: macOS x86_64
-            os: macos-13
-            command: cargo test --locked
+            command: |
+              cargo test --locked
+              rustup target add x86_64-apple-darwin
+              cargo check --locked --target x86_64-apple-darwin
           - name: Windows
             os: windows-latest
             command: cargo test --locked
@@ -34,6 +38,7 @@ jobs:
   linux-distributions:
     name: ${{ matrix.name }}
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -43,7 +48,7 @@ jobs:
             setup: apt-get update && apt-get install -y --no-install-recommends pkg-config ca-certificates
           - name: Arch
             image: archlinux:latest
-            setup: pacman -Syu --noconfirm rust cargo pkgconf ca-certificates
+            setup: pacman -Sy --noconfirm --needed base-devel rust pkgconf ca-certificates
 
     steps:
       - uses: actions/checkout@v4
@@ -52,4 +57,4 @@ jobs:
             -v "$PWD:/work" \
             -w /work \
             ${{ matrix.image }} \
-            sh -lc '${{ matrix.setup }} && cargo test --locked'
+            sh -lc 'export PATH=/usr/local/cargo/bin:$PATH && ${{ matrix.setup }} && cargo test --locked'
