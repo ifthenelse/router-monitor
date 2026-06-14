@@ -14,7 +14,7 @@ Choose the release that matches the operating system and CPU architecture of the
 cargo build --release
 ```
 
-The release binary will be available at:
+If you build from source, Cargo writes the optimized binary to:
 
 ```bash
 target/release/router-monitor
@@ -22,26 +22,84 @@ target/release/router-monitor
 
 ## Usage
 
+By default, monitoring starts in the background. The command prints the process ID, the expected finish time, and the output CSV path before returning control to the terminal. Use `--foreground` to keep it attached to the terminal and show an in-place progress animation.
+
+### Duration
+
+Specify how long the monitor should run. Values without units are interpreted as seconds. Supported units are `s`, `m`, `h`, and `d`; decimal values are allowed.
+
 ```bash
 router-monitor 15
 router-monitor 15s
 router-monitor 7m
 router-monitor 4m 20s
 router-monitor 1h 30m
+router-monitor 3.5m
+```
+
+### Version
+
+Print the current `router-monitor` version and exit.
+
+```bash
 router-monitor -v
 router-monitor --version
+```
+
+### Foreground Mode
+
+Run attached to the current terminal instead of starting a background process. Add `--verbose` to show per-sample status details.
+
+```bash
 router-monitor 10m --foreground
 router-monitor 10m --foreground --verbose
+```
+
+### Output Path
+
+Write to a specific CSV file, or pass a directory to create a timestamped CSV inside it.
+
+```bash
 router-monitor 10m -o router.csv
+router-monitor 10m -o logs
+router-monitor 10m -o logs/
+```
+
+### Network Targets
+
+Override the default router and Internet ping targets.
+
+```bash
+router-monitor 10m --router-ip 192.168.0.1
 router-monitor 10m -r 192.168.0.1
+router-monitor 10m --internet-ip 8.8.8.8
 router-monitor 10m -i 8.8.8.8
+```
+
+### Location
+
+Provide an explicit location for weather collection. If omitted, the monitor attempts city-level public IP geolocation.
+
+```bash
 router-monitor 12h --latitude 45.484 --longitude 9.204
+```
+
+### Interfaces
+
+By default, the router and Internet checks use the operating system's active/default network path. On Linux, a connected WiFi interface is also detected automatically. Use `--wifi-interface` to force a specific WiFi interface.
+
+```bash
 router-monitor 12h --wifi-interface wlan0
+```
+
+### Session Monitors
+
+Change the persistent TCP target or WebSocket endpoint.
+
+```bash
 router-monitor 12h --tcp-target 1.1.1.1:443
 router-monitor 12h --websocket-url wss://example.com/socket
 ```
-
-By default, monitoring starts in the background. The command prints the process ID, the expected finish time, and the output CSV path before returning control to the terminal. Use `--foreground` to keep it attached to the terminal and show an in-place progress animation.
 
 ## Stopping a Run
 
@@ -69,8 +127,6 @@ On Linux systems where you have wrapped the binary in a systemd unit, stop that 
 sudo systemctl stop router-monitor
 ```
 
-Supported duration units are `s`, `m`, `h`, and `d`. Decimal values are allowed, such as `3.5m`, `2.25h`, and `0.5d`.
-
 By default the tool pings router IP `192.168.1.1` and Internet IP `1.1.1.1`. Use `--router-ip` and `--internet-ip` to override them.
 
 The router web interface is also measured once per sample using `http://<router-ip>`. Any HTTP response counts as success, including redirects and authentication errors, because the measurement is about responsiveness rather than login status. Requests time out after 3 seconds.
@@ -88,8 +144,6 @@ Core monitoring, weather, TCP, WebSocket, CSV, and event logging are portable ac
 Environmental data is collected every 5 minutes and cached between refreshes. By default the tool attempts city-level public IP geolocation and caches the resolved latitude/longitude, place metadata, source, and precision under the user cache directory. This does not require GPS hardware and is usually accurate enough for city-level weather correlation. Use `--latitude` and `--longitude` to provide an explicit location. If geolocation or weather lookup is unavailable, weather collection is disabled gracefully and the weather CSV cells remain empty.
 
 Weather data currently comes from Open-Meteo. The weather provider is isolated behind an internal trait so future providers or local sensors can be added without changing the monitoring loop. On Linux systems, the event log also includes the local thermal-zone temperature in Celsius when `/sys/class/thermal/thermal_zone0/temp` is available.
-
-Use `-o router.csv` to write to a specific CSV file. Use `-o logs` or `-o logs/` to create/use a directory and write a default timestamped CSV file inside it.
 
 ## Defaults
 
