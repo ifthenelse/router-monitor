@@ -83,8 +83,8 @@ fn write_environment_lines<W: Write>(writer: &mut W, reading: EnvironmentReading
         format_temperature_for_event(reading.outside_apparent_temperature_c)
     )?;
 
-    if let Some(temperature) = reading.raspberry_pi_temperature_c {
-        writeln!(writer, "Raspberry Pi temperature: {temperature:.1}C")?;
+    if let Some(temperature) = reading.local_temperature_c {
+        writeln!(writer, "Local device temperature: {temperature:.1}C")?;
     }
 
     Ok(())
@@ -128,7 +128,7 @@ mod tests {
                 outside_temperature_c: Some(32.1),
                 outside_relative_humidity: Some(71.0),
                 outside_apparent_temperature_c: Some(38.5),
-                raspberry_pi_temperature_c: Some(54.2),
+                local_temperature_c: Some(54.2),
             },
         )
         .unwrap();
@@ -137,7 +137,7 @@ mod tests {
 
         assert_eq!(
             content,
-            "2026-06-13 20:15:41 TCP disconnect detected\nTemperature: 32.1C\nHumidity: 71%\nApparent temperature: 38.5C\nRaspberry Pi temperature: 54.2C\n"
+            "2026-06-13 20:15:41 TCP disconnect detected\nTemperature: 32.1C\nHumidity: 71%\nApparent temperature: 38.5C\nLocal device temperature: 54.2C\n"
         );
 
         fs::remove_file(path).unwrap();

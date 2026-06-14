@@ -286,7 +286,7 @@ mod tests {
                 outside_temperature_c: Some(31.4),
                 outside_relative_humidity: Some(68.0),
                 outside_apparent_temperature_c: Some(37.8),
-                raspberry_pi_temperature_c: Some(54.2),
+                local_temperature_c: Some(54.2),
             },
             wifi: WifiSample {
                 enabled: true,

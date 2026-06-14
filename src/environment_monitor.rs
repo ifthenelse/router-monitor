@@ -9,7 +9,7 @@ pub const REFRESH_INTERVAL: Duration = Duration::from_secs(5 * 60);
 const GEOLOCATION_URL: &str = "https://ipapi.co/json/";
 const FALLBACK_GEOLOCATION_URL: &str = "https://ipwho.is/";
 const OPEN_METEO_URL: &str = "https://api.open-meteo.com/v1/forecast";
-const RASPBERRY_PI_THERMAL_PATH: &str = "/sys/class/thermal/thermal_zone0/temp";
+const LINUX_THERMAL_ZONE0_PATH: &str = "/sys/class/thermal/thermal_zone0/temp";
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Coordinates {
@@ -69,7 +69,7 @@ pub struct EnvironmentReading {
     pub outside_temperature_c: Option<f64>,
     pub outside_relative_humidity: Option<f64>,
     pub outside_apparent_temperature_c: Option<f64>,
-    pub raspberry_pi_temperature_c: Option<f64>,
+    pub local_temperature_c: Option<f64>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -125,7 +125,7 @@ impl EnvironmentMonitor {
         Self {
             location,
             weather_provider,
-            local_sensors: vec![Box::new(RaspberryPiTemperatureSensor::default())],
+            local_sensors: vec![Box::new(LinuxThermalZoneSensor::default())],
             cached: EnvironmentReading::default(),
             last_refresh: None,
         }
@@ -135,7 +135,7 @@ impl EnvironmentMonitor {
         Self {
             location: None,
             weather_provider: None,
-            local_sensors: vec![Box::new(RaspberryPiTemperatureSensor::default())],
+            local_sensors: vec![Box::new(LinuxThermalZoneSensor::default())],
             cached: EnvironmentReading::default(),
             last_refresh: None,
         }
@@ -159,7 +159,7 @@ impl EnvironmentMonitor {
             }
         }
 
-        reading.raspberry_pi_temperature_c = self
+        reading.local_temperature_c = self
             .local_sensors
             .iter()
             .find_map(|sensor| sensor.read_temperature_c());
@@ -240,7 +240,7 @@ impl WeatherProvider for OpenMeteoWeatherProvider {
             outside_temperature_c: Some(response.current.temperature_c),
             outside_relative_humidity: Some(response.current.relative_humidity),
             outside_apparent_temperature_c: Some(response.current.apparent_temperature_c),
-            raspberry_pi_temperature_c: None,
+            local_temperature_c: None,
         })
     }
 }
@@ -515,32 +515,32 @@ fn location_cache_path() -> Option<PathBuf> {
 }
 
 #[derive(Debug, Clone)]
-pub struct RaspberryPiTemperatureSensor {
+pub struct LinuxThermalZoneSensor {
     path: PathBuf,
 }
 
-impl Default for RaspberryPiTemperatureSensor {
+impl Default for LinuxThermalZoneSensor {
     fn default() -> Self {
         Self {
-            path: PathBuf::from(RASPBERRY_PI_THERMAL_PATH),
+            path: PathBuf::from(LINUX_THERMAL_ZONE0_PATH),
         }
     }
 }
 
-impl RaspberryPiTemperatureSensor {
+impl LinuxThermalZoneSensor {
     #[cfg(test)]
     fn new(path: PathBuf) -> Self {
         Self { path }
     }
 }
 
-impl LocalEnvironmentSensor for RaspberryPiTemperatureSensor {
+impl LocalEnvironmentSensor for LinuxThermalZoneSensor {
     fn read_temperature_c(&self) -> Option<f64> {
-        read_raspberry_pi_temperature_c(&self.path)
+        read_linux_thermal_zone_temperature_c(&self.path)
     }
 }
 
-pub fn read_raspberry_pi_temperature_c(path: &Path) -> Option<f64> {
+pub fn read_linux_thermal_zone_temperature_c(path: &Path) -> Option<f64> {
     let raw = fs::read_to_string(path).ok()?;
     let millidegrees_c = raw.trim().parse::<f64>().ok()?;
 
@@ -592,7 +592,7 @@ mod tests {
                 outside_temperature_c: Some(31.4),
                 outside_relative_humidity: Some(68.0),
                 outside_apparent_temperature_c: Some(37.8),
-                raspberry_pi_temperature_c: None,
+                local_temperature_c: None,
             })
         }
     }
@@ -628,7 +628,7 @@ mod tests {
         assert!(!cached.refreshed);
         assert!(refreshed.refreshed);
         assert_eq!(cached.reading.outside_temperature_c, Some(31.4));
-        assert_eq!(cached.reading.raspberry_pi_temperature_c, Some(54.2));
+        assert_eq!(cached.reading.local_temperature_c, Some(54.2));
     }
 
     #[test]
@@ -637,19 +637,19 @@ mod tests {
             outside_temperature_c: Some(29.0),
             outside_relative_humidity: Some(60.0),
             outside_apparent_temperature_c: Some(35.0),
-            raspberry_pi_temperature_c: None,
+            local_temperature_c: None,
         }));
         assert!(has_high_heat_conditions(EnvironmentReading {
             outside_temperature_c: Some(20.0),
             outside_relative_humidity: Some(75.0),
             outside_apparent_temperature_c: Some(25.0),
-            raspberry_pi_temperature_c: None,
+            local_temperature_c: None,
         }));
         assert!(!has_high_heat_conditions(EnvironmentReading {
             outside_temperature_c: Some(20.0),
             outside_relative_humidity: Some(50.0),
             outside_apparent_temperature_c: Some(25.0),
-            raspberry_pi_temperature_c: None,
+            local_temperature_c: None,
         }));
     }
 
@@ -706,10 +706,10 @@ mod tests {
     }
 
     #[test]
-    fn reads_raspberry_pi_millidegrees_as_celsius() {
+    fn reads_linux_thermal_zone_millidegrees_as_celsius() {
         let path = unique_temp_path();
         fs::write(&path, "54210\n").unwrap();
-        let sensor = RaspberryPiTemperatureSensor::new(path.clone());
+        let sensor = LinuxThermalZoneSensor::new(path.clone());
 
         assert_eq!(sensor.read_temperature_c(), Some(54.21));
 

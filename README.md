@@ -4,7 +4,7 @@
 
 [Download prebuilt executables from GitHub Releases.](../../releases)
 
-For Raspberry Pi OS, use the `aarch64-unknown-linux-musl` release on 64-bit installs and the `armv7-unknown-linux-musleabihf` release on 32-bit installs. Run `uname -m` on the Pi if you are unsure.
+Choose the release that matches the operating system and CPU architecture of the device where the monitor will run. On Unix-like systems, `uname -m` can help identify the architecture.
 
 [![CI](https://github.com/ifthenelse/router-monitor/actions/workflows/ci.yml/badge.svg)](https://github.com/ifthenelse/router-monitor/actions/workflows/ci.yml)
 
@@ -51,17 +51,17 @@ The router web interface is also measured once per sample using `http://<router-
 
 Application-level connectivity is measured with a DNS lookup for `google.com`, an HTTPS request to `https://www.google.com`, and an HTTPS request to `https://1.1.1.1`. Each application-level check uses a 3-second timeout and reports only `ok` or `timeout`.
 
-To compare the Raspberry Pi's Ethernet baseline against its WiFi adapter, pass `--wifi-interface wlan0`. WiFi monitoring reads Linux `iw dev wlan0 link` data, `/proc/net/wireless` link quality, and performs router/Internet pings bound to that interface.
+To compare the host's default network path against a WiFi adapter, pass `--wifi-interface wlan0`. WiFi monitoring reads Linux `iw dev wlan0 link` data, `/proc/net/wireless` link quality, and performs router/Internet pings bound to that interface.
 
 The persistent TCP monitor is enabled by default and connects to `1.1.1.1:443`; use `--tcp-target HOST:PORT` to change it. WebSocket monitoring is enabled by default and connects to the public echo server `wss://echo.websocket.org`; use `--websocket-url URL` to change it.
 
-The client-link monitor is isolated behind a trait so a future macOS companion can emit the same WiFi/session metric shape as the Raspberry Pi monitor without changing CSV or correlation logic.
+The client-link monitor is isolated behind a trait so future platform-specific providers can emit the same WiFi/session metric shape without changing CSV or correlation logic.
 
-Core monitoring, weather, TCP, WebSocket, CSV, and event logging are portable across Linux, macOS, and Windows. Raspberry Pi WiFi telemetry currently uses Linux `iw` and `/proc/net/wireless`; on macOS and Windows `--wifi-interface` is ignored gracefully until native client-link providers are added.
+Core monitoring, weather, TCP, WebSocket, CSV, and event logging are portable across Linux, macOS, and Windows. WiFi telemetry currently uses Linux `iw` and `/proc/net/wireless`; on macOS and Windows `--wifi-interface` is ignored gracefully until native client-link providers are added.
 
 Environmental data is collected every 5 minutes and cached between refreshes. By default the tool attempts city-level public IP geolocation and caches the resolved latitude/longitude, place metadata, source, and precision under the user cache directory. This does not require GPS hardware and is usually accurate enough for city-level weather correlation. Use `--latitude` and `--longitude` to provide an explicit location. If geolocation or weather lookup is unavailable, weather collection is disabled gracefully and the weather CSV cells remain empty.
 
-Weather data currently comes from Open-Meteo. The weather provider is isolated behind an internal trait so future providers or local sensors can be added without changing the monitoring loop. On Raspberry Pi systems, the event log also includes the CPU temperature in Celsius when `/sys/class/thermal/thermal_zone0/temp` is available.
+Weather data currently comes from Open-Meteo. The weather provider is isolated behind an internal trait so future providers or local sensors can be added without changing the monitoring loop. On Linux systems, the event log also includes the local thermal-zone temperature in Celsius when `/sys/class/thermal/thermal_zone0/temp` is available.
 
 Use `-o router.csv` to write to a specific CSV file. Use `-o logs` or `-o logs/` to create/use a directory and write a default timestamped CSV file inside it.
 
@@ -129,7 +129,7 @@ outside_apparent_temperature_c >= 35
 outside_relative_humidity >= 75
 ```
 
-Connectivity timeout transitions are also written with the current environmental values so later analysis can compare network instability with heat, humidity, and Raspberry Pi thermal state.
+Connectivity timeout transitions are also written with the current environmental values so later analysis can compare network instability with heat, humidity, and local device thermal state when available.
 
 WiFi, TCP, WebSocket, and correlation events are also written, including:
 
