@@ -9,6 +9,7 @@ use crate::event_log::{event_log_path, EventLog};
 use crate::http_monitor::{self, HttpMonitor, HttpResult};
 use crate::https_monitor::{self, HttpsMonitor, HttpsResult};
 use crate::ping::{self, PingResult};
+use crate::stop_hint;
 use crate::tcp_monitor::{TcpConfig, TcpMonitor};
 use crate::websocket_monitor::{WebSocketConfig, WebSocketMonitor};
 use crate::wifi_monitor::{WifiConfig, WifiMonitor};
@@ -384,6 +385,7 @@ fn print_startup(
     environment_monitor: &EnvironmentMonitor,
 ) {
     println!("Monitoring started");
+    println!("{}", stop_hint::foreground_stop_hint());
     println!("Router IP: {}", config.router_ip);
     println!("Internet IP: {}", config.internet_ip);
     println!(

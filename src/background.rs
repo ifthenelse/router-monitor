@@ -1,6 +1,7 @@
 use crate::csv_writer;
 use crate::event_log::{self, event_log_path};
 use crate::monitor::{self, MonitorConfig};
+use crate::stop_hint;
 use anyhow::{Context, Result};
 use std::process::{Command, Stdio};
 
@@ -23,6 +24,7 @@ pub fn spawn(config: MonitorConfig) -> Result<()> {
 
     println!("Monitoring started in background");
     println!("Process ID: {}", child.id());
+    println!("{}", stop_hint::background_stop_hint(child.id()));
     println!("Will finish at: {finish_time}");
     println!("Output file: {}", config.output_path.display());
     println!("Event log: {}", event_log_path.display());

@@ -11,6 +11,7 @@ mod http_monitor;
 mod https_monitor;
 mod monitor;
 mod ping;
+mod stop_hint;
 mod tcp_monitor;
 mod validation;
 mod websocket_monitor;

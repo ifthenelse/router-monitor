@@ -108,6 +108,7 @@ router-monitor 12h --websocket-url wss://example.com/socket
 ```text
 Monitoring started in background
 Process ID: 12345
+To stop monitoring, run: kill 12345
 ```
 
 If the monitor is running in the foreground, press `Ctrl+C` in the terminal where it is running.
