@@ -73,7 +73,7 @@ struct RawCli {
     #[arg(long = "longitude", value_name = "VALUE", value_parser = parse_longitude, requires = "latitude")]
     longitude: Option<f64>,
 
-    /// WiFi interface to monitor, such as wlan0. Disabled if omitted.
+    /// WiFi interface to monitor, such as wlan0. If omitted, connected WiFi is detected automatically where supported.
     #[arg(long = "wifi-interface", value_name = "IFACE")]
     wifi_interface: Option<String>,
 
@@ -136,7 +136,10 @@ impl TryFrom<RawCli> for MonitorConfig {
                 _ => None,
             },
         };
-        let wifi = raw.wifi_interface.map(WifiConfig::new);
+        let wifi = raw
+            .wifi_interface
+            .map(WifiConfig::new)
+            .unwrap_or_else(WifiConfig::auto);
         let tcp = TcpConfig {
             target: raw.tcp_target,
         };
@@ -227,6 +230,7 @@ fn home_dir() -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::wifi_monitor::WifiInterfaceSelection;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
@@ -260,6 +264,43 @@ mod tests {
         assert_default_output_filename(resolved.file_name().unwrap().to_string_lossy().as_ref());
 
         fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn omitted_wifi_interface_enables_auto_detection() {
+        let config: MonitorConfig = raw_cli_with_wifi(None).try_into().unwrap();
+
+        assert_eq!(config.wifi.interface, WifiInterfaceSelection::Auto);
+    }
+
+    #[test]
+    fn explicit_wifi_interface_overrides_auto_detection() {
+        let config: MonitorConfig = raw_cli_with_wifi(Some("wlan0".to_string()))
+            .try_into()
+            .unwrap();
+
+        assert_eq!(
+            config.wifi.interface,
+            WifiInterfaceSelection::Explicit("wlan0".to_string())
+        );
+    }
+
+    fn raw_cli_with_wifi(wifi_interface: Option<String>) -> RawCli {
+        RawCli {
+            duration: vec!["1s".to_string()],
+            router_ip: Ipv4Addr::new(192, 168, 1, 1),
+            internet_ip: Ipv4Addr::new(1, 1, 1, 1),
+            latitude: None,
+            longitude: None,
+            wifi_interface,
+            tcp_target: "1.1.1.1:443".to_string(),
+            websocket_url: DEFAULT_WEBSOCKET_URL.to_string(),
+            output: Some(unique_temp_path("wifi-config").with_extension("csv")),
+            version: false,
+            verbose: false,
+            foreground: true,
+            beep: false,
+        }
     }
 
     fn unique_temp_path(label: &str) -> PathBuf {

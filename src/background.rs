@@ -56,8 +56,8 @@ fn background_command(config: &MonitorConfig) -> Result<Command> {
             .arg(location.longitude.to_string());
     }
 
-    if let Some(wifi) = &config.wifi {
-        command.arg("--wifi-interface").arg(&wifi.interface);
+    if let Some(interface) = config.wifi.explicit_interface() {
+        command.arg("--wifi-interface").arg(interface);
     }
 
     command.arg("--tcp-target").arg(&config.tcp.target);

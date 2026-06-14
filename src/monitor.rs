@@ -11,7 +11,7 @@ use crate::https_monitor::{self, HttpsMonitor, HttpsResult};
 use crate::ping::{self, PingResult};
 use crate::tcp_monitor::{TcpConfig, TcpMonitor};
 use crate::websocket_monitor::{WebSocketConfig, WebSocketMonitor};
-use crate::wifi_monitor::{WifiConfig, WifiMonitor, WifiSample};
+use crate::wifi_monitor::{WifiConfig, WifiMonitor};
 use anyhow::Result;
 use chrono::{Duration as ChronoDuration, Local};
 use std::io::{self, Write};
@@ -27,7 +27,7 @@ pub struct MonitorConfig {
     pub router_ip: Ipv4Addr,
     pub internet_ip: Ipv4Addr,
     pub environment: crate::environment_monitor::EnvironmentConfig,
-    pub wifi: Option<WifiConfig>,
+    pub wifi: WifiConfig,
     pub tcp: TcpConfig,
     pub websocket: WebSocketConfig,
     pub output_path: PathBuf,
@@ -45,7 +45,7 @@ pub fn run(config: MonitorConfig) -> Result<()> {
     let dns_monitor = DnsMonitor::new();
     let https_monitor = HttpsMonitor::new()?;
     let mut environment_monitor = EnvironmentMonitor::new(config.environment);
-    let mut wifi_monitor = config.wifi.clone().map(WifiMonitor::new);
+    let mut wifi_monitor = WifiMonitor::new(config.wifi.clone());
     let mut tcp_monitor = TcpMonitor::new(config.tcp.clone());
     let mut websocket_monitor = WebSocketMonitor::new(config.websocket.clone());
     let mut previous_statuses = None;
@@ -73,10 +73,7 @@ pub fn run(config: MonitorConfig) -> Result<()> {
                 dns_monitor,
                 &https_monitor,
             );
-        let wifi = wifi_monitor
-            .as_mut()
-            .map(|monitor| monitor.sample(config.router_ip, config.internet_ip))
-            .unwrap_or_else(WifiSample::disabled);
+        let wifi = wifi_monitor.sample(config.router_ip, config.internet_ip);
         let tcp = tcp_monitor.sample(&timestamp, now);
         let websocket = websocket_monitor.sample(&timestamp, now);
         let sample = CsvSample {
@@ -400,10 +397,7 @@ fn print_startup(
         Some(location) => println!("Weather: enabled ({})", location.display_label()),
         None => println!("Weather: disabled (location unavailable)"),
     }
-    match &config.wifi {
-        Some(wifi) => println!("WiFi monitor: enabled ({})", wifi.interface),
-        None => println!("WiFi monitor: disabled"),
-    }
+    println!("WiFi monitor: {}", config.wifi.description());
     println!("TCP monitor: {}", config.tcp.target);
     match &config.websocket.url {
         Some(url) => println!("WebSocket monitor: {url}"),

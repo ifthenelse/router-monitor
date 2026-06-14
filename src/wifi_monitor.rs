@@ -7,7 +7,7 @@ const DEFAULT_LINK_QUALITY_LOW_THRESHOLD: u8 = 35;
 
 #[derive(Debug, Clone)]
 pub struct WifiConfig {
-    pub interface: String,
+    pub interface: WifiInterfaceSelection,
     pub signal_low_threshold_dbm: i32,
     pub link_quality_low_threshold: u8,
 }
@@ -15,16 +15,45 @@ pub struct WifiConfig {
 impl WifiConfig {
     pub fn new(interface: String) -> Self {
         Self {
-            interface,
+            interface: WifiInterfaceSelection::Explicit(interface),
             signal_low_threshold_dbm: DEFAULT_SIGNAL_LOW_THRESHOLD_DBM,
             link_quality_low_threshold: DEFAULT_LINK_QUALITY_LOW_THRESHOLD,
         }
     }
+
+    pub fn auto() -> Self {
+        Self {
+            interface: WifiInterfaceSelection::Auto,
+            signal_low_threshold_dbm: DEFAULT_SIGNAL_LOW_THRESHOLD_DBM,
+            link_quality_low_threshold: DEFAULT_LINK_QUALITY_LOW_THRESHOLD,
+        }
+    }
+
+    pub fn explicit_interface(&self) -> Option<&str> {
+        match &self.interface {
+            WifiInterfaceSelection::Auto => None,
+            WifiInterfaceSelection::Explicit(interface) => Some(interface),
+        }
+    }
+
+    pub fn description(&self) -> String {
+        match &self.interface {
+            WifiInterfaceSelection::Auto => "auto".to_string(),
+            WifiInterfaceSelection::Explicit(interface) => interface.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WifiInterfaceSelection {
+    Auto,
+    Explicit(String),
 }
 
 #[derive(Debug, Clone)]
 pub struct WifiSample {
     pub enabled: bool,
+    pub interface: Option<String>,
     pub signal_dbm: Option<i32>,
     pub link_quality: Option<u8>,
     pub tx_bitrate_mbps: Option<f64>,
@@ -42,6 +71,7 @@ impl Default for WifiSample {
     fn default() -> Self {
         Self {
             enabled: false,
+            interface: None,
             signal_dbm: None,
             link_quality: None,
             tx_bitrate_mbps: None,
@@ -106,6 +136,7 @@ impl WifiEvent {
 #[derive(Debug)]
 pub struct WifiMonitor {
     config: WifiConfig,
+    current_interface: Option<String>,
     previous_associated: Option<bool>,
     previous_bssid: Option<String>,
     previous_channel: Option<u32>,
@@ -121,6 +152,7 @@ impl WifiMonitor {
     pub fn new(config: WifiConfig) -> Self {
         Self {
             config,
+            current_interface: None,
             previous_associated: None,
             previous_bssid: None,
             previous_channel: None,
@@ -131,6 +163,26 @@ impl WifiMonitor {
 
     pub fn sample(&mut self, router_ip: Ipv4Addr, internet_ip: Ipv4Addr) -> WifiSample {
         self.sample_client_link(router_ip, internet_ip)
+    }
+
+    fn resolve_interface(&self) -> Option<String> {
+        match &self.config.interface {
+            WifiInterfaceSelection::Explicit(interface) => Some(interface.clone()),
+            WifiInterfaceSelection::Auto => detect_connected_wifi_interface(),
+        }
+    }
+
+    fn reset_state_for_interface(&mut self, interface: &str) {
+        if self.current_interface.as_deref() == Some(interface) {
+            return;
+        }
+
+        self.current_interface = Some(interface.to_string());
+        self.previous_associated = None;
+        self.previous_bssid = None;
+        self.previous_channel = None;
+        self.disconnect_count = 0;
+        self.reconnect_count = 0;
     }
 
     fn detect_events(
@@ -182,14 +234,18 @@ impl ClientLinkMonitor for WifiMonitor {
             return WifiSample::disabled();
         }
 
-        let link = read_iw_link(&self.config.interface).unwrap_or_default();
-        let link_quality = read_link_quality(&self.config.interface);
+        let Some(interface) = self.resolve_interface() else {
+            return WifiSample::disabled();
+        };
+
+        self.reset_state_for_interface(&interface);
+
+        let link = read_iw_link(&interface).unwrap_or_default();
+        let link_quality = read_link_quality(&interface);
         let associated = link.associated_bssid.is_some();
         let mut events = self.detect_events(&link, link_quality, associated);
-        let router_ping =
-            ping::ping_once_via_interface(&router_ip.to_string(), &self.config.interface);
-        let internet_ping =
-            ping::ping_once_via_interface(&internet_ip.to_string(), &self.config.interface);
+        let router_ping = ping::ping_once_via_interface(&router_ip.to_string(), &interface);
+        let internet_ping = ping::ping_once_via_interface(&internet_ip.to_string(), &interface);
 
         self.previous_associated = Some(associated);
         self.previous_bssid = link.associated_bssid.clone();
@@ -216,6 +272,7 @@ impl ClientLinkMonitor for WifiMonitor {
 
         WifiSample {
             enabled: true,
+            interface: Some(interface),
             signal_dbm: link.signal_dbm,
             link_quality,
             tx_bitrate_mbps: link.tx_bitrate_mbps,
@@ -233,6 +290,38 @@ impl ClientLinkMonitor for WifiMonitor {
 
 fn wifi_platform_supported() -> bool {
     cfg!(target_os = "linux")
+}
+
+fn detect_connected_wifi_interface() -> Option<String> {
+    let candidates = read_wireless_interface_names();
+
+    select_connected_wifi_interface(candidates, read_iw_link)
+}
+
+fn read_wireless_interface_names() -> Vec<String> {
+    std::fs::read_to_string("/proc/net/wireless")
+        .map(|content| parse_proc_net_wireless_interfaces(&content))
+        .unwrap_or_default()
+}
+
+fn parse_proc_net_wireless_interfaces(content: &str) -> Vec<String> {
+    content
+        .lines()
+        .filter_map(|line| line.trim().split_once(':'))
+        .map(|(interface, _)| interface.trim().to_string())
+        .filter(|interface| !interface.is_empty())
+        .collect()
+}
+
+fn select_connected_wifi_interface(
+    candidates: Vec<String>,
+    read_link: impl Fn(&str) -> Option<IwLink>,
+) -> Option<String> {
+    candidates.into_iter().find(|interface| {
+        read_link(interface)
+            .map(|link| link.associated_bssid.is_some())
+            .unwrap_or(false)
+    })
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -357,6 +446,49 @@ wlan0: 0000   49.  -61.  -256        0      0      0      0      0        0
 ";
 
         assert_eq!(parse_proc_net_wireless_quality(content, "wlan0"), Some(70));
+    }
+
+    #[test]
+    fn parses_wireless_interface_names_from_proc_net_wireless() {
+        let content = "\
+Inter-| sta-|   Quality        |   Discarded packets               | Missed | WE
+ face | tus | link level noise |  nwid  crypt   frag  retry   misc | beacon | 22
+wlan0: 0000   49.  -61.  -256        0      0      0      0      0        0
+wlp2s0: 0000   62.  -48.  -256        0      0      0      0      0        0
+";
+
+        assert_eq!(
+            parse_proc_net_wireless_interfaces(content),
+            vec!["wlan0".to_string(), "wlp2s0".to_string()]
+        );
+    }
+
+    #[test]
+    fn selects_first_connected_wifi_interface() {
+        let candidates = vec!["wlan0".to_string(), "wlp2s0".to_string()];
+
+        assert_eq!(
+            select_connected_wifi_interface(candidates, |interface| {
+                if interface == "wlp2s0" {
+                    Some(IwLink {
+                        associated_bssid: Some("aa:bb:cc:dd:ee:ff".to_string()),
+                        ..IwLink::default()
+                    })
+                } else {
+                    Some(IwLink::default())
+                }
+            }),
+            Some("wlp2s0".to_string())
+        );
+    }
+
+    #[test]
+    fn wifi_config_defaults_to_auto_detection() {
+        let config = WifiConfig::auto();
+
+        assert_eq!(config.interface, WifiInterfaceSelection::Auto);
+        assert_eq!(config.explicit_interface(), None);
+        assert_eq!(config.description(), "auto");
     }
 
     #[test]

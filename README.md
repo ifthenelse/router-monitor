@@ -77,13 +77,13 @@ The router web interface is also measured once per sample using `http://<router-
 
 Application-level connectivity is measured with a DNS lookup for `google.com`, an HTTPS request to `https://www.google.com`, and an HTTPS request to `https://1.1.1.1`. Each application-level check uses a 3-second timeout and reports only `ok` or `timeout`.
 
-To compare the host's default network path against a WiFi adapter, pass `--wifi-interface wlan0`. WiFi monitoring reads Linux `iw dev wlan0 link` data, `/proc/net/wireless` link quality, and performs router/Internet pings bound to that interface.
+The default router and Internet ping checks use the operating system's active/default network path, so an Ethernet-connected device is checked without extra options. On Linux, if a connected WiFi interface is also active, the monitor automatically records WiFi telemetry and performs router/Internet pings bound to that WiFi interface. Pass `--wifi-interface wlan0` to monitor a specific WiFi interface instead of auto-detecting it.
 
 The persistent TCP monitor is enabled by default and connects to `1.1.1.1:443`; use `--tcp-target HOST:PORT` to change it. WebSocket monitoring is enabled by default and connects to the public echo server `wss://echo.websocket.org`; use `--websocket-url URL` to change it.
 
 The client-link monitor is isolated behind a trait so future platform-specific providers can emit the same WiFi/session metric shape without changing CSV or correlation logic.
 
-Core monitoring, weather, TCP, WebSocket, CSV, and event logging are portable across Linux, macOS, and Windows. WiFi telemetry currently uses Linux `iw` and `/proc/net/wireless`; on macOS and Windows `--wifi-interface` is ignored gracefully until native client-link providers are added.
+Core monitoring, weather, TCP, WebSocket, CSV, and event logging are portable across Linux, macOS, and Windows. WiFi telemetry currently uses Linux `iw` and `/proc/net/wireless`; on macOS and Windows the default-route checks still run, while `--wifi-interface` is ignored gracefully until native client-link providers are added.
 
 Environmental data is collected every 5 minutes and cached between refreshes. By default the tool attempts city-level public IP geolocation and caches the resolved latitude/longitude, place metadata, source, and precision under the user cache directory. This does not require GPS hardware and is usually accurate enough for city-level weather correlation. Use `--latitude` and `--longitude` to provide an explicit location. If geolocation or weather lookup is unavailable, weather collection is disabled gracefully and the weather CSV cells remain empty.
 
@@ -108,7 +108,7 @@ Use `-o router.csv` to write to a specific CSV file. Use `-o logs` or `-o logs/`
 | TCP monitor target              | `1.1.1.1:443`                                                                        |
 | WebSocket monitor URL           | `wss://echo.websocket.org`                                                           |
 | WebSocket heartbeat interval    | 15 seconds                                                                           |
-| WiFi monitoring                 | Disabled unless `--wifi-interface` is supplied                                       |
+| WiFi monitoring                 | Auto-detect a connected Linux WiFi interface; `--wifi-interface` overrides it        |
 | WiFi low signal threshold       | `-75 dBm`                                                                            |
 | WiFi low link-quality threshold | `35`                                                                                 |
 | Weather provider                | Open-Meteo                                                                           |
@@ -127,10 +127,10 @@ If no output file is supplied, the tool creates a file named `router-monitor-YYY
 The CSV header is:
 
 ```csv
-timestamp,script_version,router_ms,internet_ms,router_http_ms,dns_lookup_ms,https_google_ms,https_cloudflare_ms,outside_temperature_c,outside_relative_humidity,outside_apparent_temperature_c,wifi_signal_dbm,wifi_link_quality,wifi_tx_bitrate,wifi_rx_bitrate,wifi_router_ms,wifi_internet_ms,wifi_disconnect_count,wifi_reconnect_count,wifi_associated_bssid,wifi_channel,tcp_connected,tcp_disconnect_count,tcp_reconnect_count,tcp_session_uptime_seconds,last_tcp_disconnect,websocket_connected,websocket_disconnect_count,websocket_reconnect_count,websocket_uptime_seconds,last_websocket_disconnect,suspected_failure_layer,router_status,internet_status,router_http_status,dns_status,https_google_status,https_cloudflare_status
+timestamp,script_version,router_ms,internet_ms,router_http_ms,dns_lookup_ms,https_google_ms,https_cloudflare_ms,outside_temperature_c,outside_relative_humidity,outside_apparent_temperature_c,wifi_interface,wifi_signal_dbm,wifi_link_quality,wifi_tx_bitrate,wifi_rx_bitrate,wifi_router_ms,wifi_internet_ms,wifi_disconnect_count,wifi_reconnect_count,wifi_associated_bssid,wifi_channel,tcp_connected,tcp_disconnect_count,tcp_reconnect_count,tcp_session_uptime_seconds,last_tcp_disconnect,websocket_connected,websocket_disconnect_count,websocket_reconnect_count,websocket_uptime_seconds,last_websocket_disconnect,suspected_failure_layer,router_status,internet_status,router_http_status,dns_status,https_google_status,https_cloudflare_status
 ```
 
-`script_version` is the current `router-monitor` package version. Successful latency values are numeric milliseconds. Failed ping, DNS, HTTP, HTTPS, or WiFi-bound ping checks leave the latency cell empty and write `timeout` in the matching status column when a status column exists. Weather values are written as Celsius temperature, relative humidity percentage, and apparent Celsius temperature; unavailable weather values are empty.
+`script_version` is the current `router-monitor` package version. Successful latency values are numeric milliseconds. Failed ping, DNS, HTTP, HTTPS, or WiFi-bound ping checks leave the latency cell empty and write `timeout` in the matching status column when a status column exists. `wifi_interface` records the detected or configured WiFi interface when WiFi telemetry is active. Weather values are written as Celsius temperature, relative humidity percentage, and apparent Celsius temperature; unavailable weather values are empty.
 
 `suspected_failure_layer` is one of:
 

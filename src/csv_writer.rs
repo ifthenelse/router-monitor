@@ -15,7 +15,7 @@ use std::fs::{File, OpenOptions};
 use std::io::BufWriter;
 use std::path::Path;
 
-const HEADER: [&str; 38] = [
+const HEADER: [&str; 39] = [
     "timestamp",
     "script_version",
     "router_ms",
@@ -27,6 +27,7 @@ const HEADER: [&str; 38] = [
     "outside_temperature_c",
     "outside_relative_humidity",
     "outside_apparent_temperature_c",
+    "wifi_interface",
     "wifi_signal_dbm",
     "wifi_link_quality",
     "wifi_tx_bitrate",
@@ -104,6 +105,7 @@ impl CsvLog {
             format_humidity_field(sample.environment.outside_relative_humidity);
         let outside_apparent_temperature_c =
             format_temperature_field(sample.environment.outside_apparent_temperature_c);
+        let wifi_interface = sample.wifi.interface.as_deref().unwrap_or_default();
         let wifi_signal_dbm = optional_display(sample.wifi.signal_dbm);
         let wifi_link_quality = optional_display(sample.wifi.link_quality);
         let wifi_tx_bitrate = optional_float_field(sample.wifi.tx_bitrate_mbps);
@@ -149,6 +151,7 @@ impl CsvLog {
             outside_temperature_c.as_str(),
             outside_relative_humidity.as_str(),
             outside_apparent_temperature_c.as_str(),
+            wifi_interface,
             wifi_signal_dbm.as_str(),
             wifi_link_quality.as_str(),
             wifi_tx_bitrate.as_str(),
@@ -290,6 +293,7 @@ mod tests {
             },
             wifi: WifiSample {
                 enabled: true,
+                interface: Some("wlan0".to_string()),
                 signal_dbm: Some(-61),
                 link_quality: Some(70),
                 tx_bitrate_mbps: Some(72.2),
@@ -332,7 +336,7 @@ mod tests {
         assert_eq!(
             content,
             format!(
-                "timestamp,script_version,router_ms,internet_ms,router_http_ms,dns_lookup_ms,https_google_ms,https_cloudflare_ms,outside_temperature_c,outside_relative_humidity,outside_apparent_temperature_c,wifi_signal_dbm,wifi_link_quality,wifi_tx_bitrate,wifi_rx_bitrate,wifi_router_ms,wifi_internet_ms,wifi_disconnect_count,wifi_reconnect_count,wifi_associated_bssid,wifi_channel,tcp_connected,tcp_disconnect_count,tcp_reconnect_count,tcp_session_uptime_seconds,last_tcp_disconnect,websocket_connected,websocket_disconnect_count,websocket_reconnect_count,websocket_uptime_seconds,last_websocket_disconnect,suspected_failure_layer,router_status,internet_status,router_http_status,dns_status,https_google_status,https_cloudflare_status\n2026-06-01 18:00:03,{},0.70,8.20,2.91,7.93,,18.11,31.4,68,37.8,-61,70,72.2,86.7,1.80,9.40,1,1,70:3a:cb:12:34:56,1,true,2,2,42,2026-06-01 17:59:50,false,3,2,,2026-06-01 18:00:01,session,ok,ok,ok,ok,timeout,ok\n",
+                "timestamp,script_version,router_ms,internet_ms,router_http_ms,dns_lookup_ms,https_google_ms,https_cloudflare_ms,outside_temperature_c,outside_relative_humidity,outside_apparent_temperature_c,wifi_interface,wifi_signal_dbm,wifi_link_quality,wifi_tx_bitrate,wifi_rx_bitrate,wifi_router_ms,wifi_internet_ms,wifi_disconnect_count,wifi_reconnect_count,wifi_associated_bssid,wifi_channel,tcp_connected,tcp_disconnect_count,tcp_reconnect_count,tcp_session_uptime_seconds,last_tcp_disconnect,websocket_connected,websocket_disconnect_count,websocket_reconnect_count,websocket_uptime_seconds,last_websocket_disconnect,suspected_failure_layer,router_status,internet_status,router_http_status,dns_status,https_google_status,https_cloudflare_status\n2026-06-01 18:00:03,{},0.70,8.20,2.91,7.93,,18.11,31.4,68,37.8,wlan0,-61,70,72.2,86.7,1.80,9.40,1,1,70:3a:cb:12:34:56,1,true,2,2,42,2026-06-01 17:59:50,false,3,2,,2026-06-01 18:00:01,session,ok,ok,ok,ok,timeout,ok\n",
                 env!("CARGO_PKG_VERSION")
             )
         );
