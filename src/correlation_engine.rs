@@ -93,6 +93,17 @@ mod tests {
     }
 
     #[test]
+    fn does_not_classify_wifi_failure_when_bound_wifi_pings_are_healthy() {
+        let mut sample = healthy_sample();
+        sample.wifi.enabled = true;
+        sample.wifi.interface = Some("wlan0".to_string());
+        sample.wifi.router_ping = PingResult::ok(1.0);
+        sample.wifi.internet_ping = PingResult::ok(5.0);
+
+        assert_eq!(classify_sample(&sample), SuspectedFailureLayer::None);
+    }
+
+    #[test]
     fn classifies_session_failure_when_baseline_is_healthy() {
         let mut sample = healthy_sample();
         sample.tcp.connected = false;

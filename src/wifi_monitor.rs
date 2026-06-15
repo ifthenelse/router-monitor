@@ -1,5 +1,7 @@
 use crate::ping::{self, PingResult};
+use std::fs;
 use std::net::Ipv4Addr;
+use std::path::Path;
 use std::process::Command;
 
 const DEFAULT_SIGNAL_LOW_THRESHOLD_DBM: i32 = -75;
@@ -99,6 +101,9 @@ impl WifiSample {
 
     pub fn associated(&self) -> bool {
         self.associated_bssid.is_some()
+            || (self.enabled
+                && (self.router_ping.status == crate::ping::PingStatus::Ok
+                    || self.internet_ping.status == crate::ping::PingStatus::Ok))
     }
 }
 
@@ -295,13 +300,29 @@ fn wifi_platform_supported() -> bool {
 fn detect_connected_wifi_interface() -> Option<String> {
     let candidates = read_wireless_interface_names();
 
-    select_connected_wifi_interface(candidates, read_iw_link)
+    select_connected_wifi_interface(candidates, read_iw_link, interface_appears_active)
 }
 
 fn read_wireless_interface_names() -> Vec<String> {
-    std::fs::read_to_string("/proc/net/wireless")
+    let mut interfaces = Vec::new();
+
+    fs::read_to_string("/proc/net/wireless")
         .map(|content| parse_proc_net_wireless_interfaces(&content))
         .unwrap_or_default()
+        .into_iter()
+        .for_each(|interface| push_unique(&mut interfaces, interface));
+
+    read_sysfs_wireless_interfaces(Path::new("/sys/class/net"))
+        .into_iter()
+        .for_each(|interface| push_unique(&mut interfaces, interface));
+
+    interfaces
+}
+
+fn push_unique(values: &mut Vec<String>, value: String) {
+    if !values.contains(&value) {
+        values.push(value);
+    }
 }
 
 fn parse_proc_net_wireless_interfaces(content: &str) -> Vec<String> {
@@ -316,12 +337,57 @@ fn parse_proc_net_wireless_interfaces(content: &str) -> Vec<String> {
 fn select_connected_wifi_interface(
     candidates: Vec<String>,
     read_link: impl Fn(&str) -> Option<IwLink>,
+    is_active: impl Fn(&str) -> bool,
 ) -> Option<String> {
-    candidates.into_iter().find(|interface| {
-        read_link(interface)
+    let mut active_fallback = None;
+
+    for interface in candidates {
+        if read_link(&interface)
             .map(|link| link.associated_bssid.is_some())
             .unwrap_or(false)
-    })
+        {
+            return Some(interface);
+        }
+
+        if active_fallback.is_none() && is_active(&interface) {
+            active_fallback = Some(interface);
+        }
+    }
+
+    active_fallback
+}
+
+fn read_sysfs_wireless_interfaces(root: &Path) -> Vec<String> {
+    let Ok(entries) = fs::read_dir(root) else {
+        return Vec::new();
+    };
+
+    let mut interfaces = entries
+        .flatten()
+        .filter(|entry| entry.path().join("wireless").is_dir())
+        .filter_map(|entry| entry.file_name().into_string().ok())
+        .collect::<Vec<_>>();
+
+    interfaces.sort();
+    interfaces
+}
+
+fn interface_appears_active(interface: &str) -> bool {
+    sysfs_interface_appears_active(&Path::new("/sys/class/net").join(interface))
+}
+
+fn sysfs_interface_appears_active(interface_path: &Path) -> bool {
+    let carrier_up = fs::read_to_string(interface_path.join("carrier"))
+        .map(|carrier| carrier.trim() == "1")
+        .unwrap_or(false);
+
+    if carrier_up {
+        return true;
+    }
+
+    fs::read_to_string(interface_path.join("operstate"))
+        .map(|state| matches!(state.trim(), "up" | "dormant" | "unknown"))
+        .unwrap_or(false)
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -411,6 +477,7 @@ fn frequency_to_channel(frequency_mhz: u32) -> Option<u32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
     fn parses_connected_iw_link_output() {
@@ -464,22 +531,87 @@ wlp2s0: 0000   62.  -48.  -256        0      0      0      0      0        0
     }
 
     #[test]
+    fn reads_wireless_interface_names_from_sysfs() {
+        let root = unique_temp_path();
+        fs::create_dir_all(root.join("eth0")).unwrap();
+        fs::create_dir_all(root.join("wlan0/wireless")).unwrap();
+        fs::create_dir_all(root.join("wlp2s0/wireless")).unwrap();
+
+        assert_eq!(
+            read_sysfs_wireless_interfaces(&root),
+            vec!["wlan0".to_string(), "wlp2s0".to_string()]
+        );
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn selects_first_connected_wifi_interface() {
         let candidates = vec!["wlan0".to_string(), "wlp2s0".to_string()];
 
         assert_eq!(
-            select_connected_wifi_interface(candidates, |interface| {
-                if interface == "wlp2s0" {
-                    Some(IwLink {
-                        associated_bssid: Some("aa:bb:cc:dd:ee:ff".to_string()),
-                        ..IwLink::default()
-                    })
-                } else {
-                    Some(IwLink::default())
-                }
-            }),
+            select_connected_wifi_interface(
+                candidates,
+                |interface| {
+                    if interface == "wlp2s0" {
+                        Some(IwLink {
+                            associated_bssid: Some("aa:bb:cc:dd:ee:ff".to_string()),
+                            ..IwLink::default()
+                        })
+                    } else {
+                        Some(IwLink::default())
+                    }
+                },
+                |_| false
+            ),
             Some("wlp2s0".to_string())
         );
+    }
+
+    #[test]
+    fn falls_back_to_active_wifi_interface_when_iw_metadata_is_unavailable() {
+        let candidates = vec!["wlan0".to_string()];
+
+        assert_eq!(
+            select_connected_wifi_interface(candidates, |_| None, |interface| interface == "wlan0"),
+            Some("wlan0".to_string())
+        );
+    }
+
+    #[test]
+    fn treats_carrier_up_sysfs_interface_as_active() {
+        let root = unique_temp_path();
+        let interface = root.join("wlan0");
+        fs::create_dir_all(&interface).unwrap();
+        fs::write(interface.join("carrier"), "1\n").unwrap();
+
+        assert!(sysfs_interface_appears_active(&interface));
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn treats_dormant_sysfs_interface_as_active() {
+        let root = unique_temp_path();
+        let interface = root.join("wlan0");
+        fs::create_dir_all(&interface).unwrap();
+        fs::write(interface.join("operstate"), "dormant\n").unwrap();
+
+        assert!(sysfs_interface_appears_active(&interface));
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn bound_ping_success_can_prove_wifi_association_when_iw_metadata_is_missing() {
+        let sample = WifiSample {
+            enabled: true,
+            router_ping: PingResult::ok(1.0),
+            associated_bssid: None,
+            ..WifiSample::default()
+        };
+
+        assert!(sample.associated());
     }
 
     #[test]
@@ -540,5 +672,17 @@ wlp2s0: 0000   62.  -48.  -256        0      0      0      0      0        0
             monitor.detect_events(&connected, Some(70), true),
             vec![WifiEvent::Reconnected]
         );
+    }
+
+    fn unique_temp_path() -> std::path::PathBuf {
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+
+        std::env::temp_dir().join(format!(
+            "router-monitor-wifi-test-{}-{timestamp}",
+            std::process::id()
+        ))
     }
 }

@@ -140,7 +140,7 @@ The TCP monitor is enabled by default and checks reachability of `1.1.1.1:443`; 
 
 The client-link monitor is isolated behind a trait so future platform-specific providers can emit the same WiFi/session metric shape without changing CSV or correlation logic.
 
-Core monitoring, weather, TCP, WebSocket, CSV, and event logging are portable across Linux, macOS, and Windows. WiFi telemetry currently uses Linux `iw` and `/proc/net/wireless`; on macOS and Windows the default-route checks still run, while `--wifi-interface` is ignored gracefully until native client-link providers are added.
+Core monitoring, weather, TCP, WebSocket, CSV, and event logging are portable across Linux, macOS, and Windows. WiFi telemetry currently uses Linux sysfs, `/proc/net/wireless`, and `iw` when available; on macOS and Windows the default-route checks still run, while `--wifi-interface` is ignored gracefully until native client-link providers are added.
 
 Environmental data is collected every 5 minutes and cached between refreshes. By default the tool attempts city-level public IP geolocation and caches the resolved latitude/longitude, place metadata, source, and precision under the user cache directory. This does not require GPS hardware and is usually accurate enough for city-level weather correlation. Use `--latitude` and `--longitude` to provide an explicit location. If geolocation or weather lookup is unavailable, weather collection is disabled gracefully and the weather CSV cells remain empty.
 
