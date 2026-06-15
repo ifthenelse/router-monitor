@@ -300,6 +300,7 @@ mod tests {
                 rx_bitrate_mbps: Some(86.7),
                 router_ping: PingResult::ok(1.8),
                 internet_ping: PingResult::ok(9.4),
+                bound_pings_supported: true,
                 disconnect_count: 1,
                 reconnect_count: 1,
                 associated_bssid: Some("70:3a:cb:12:34:56".to_string()),

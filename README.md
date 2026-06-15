@@ -86,7 +86,7 @@ router-monitor 12h --latitude 45.484 --longitude 9.204
 
 ### Interfaces
 
-By default, the router and Internet checks use the operating system's active/default network path. On Linux, a connected WiFi interface is also detected automatically. Use `--wifi-interface` to force a specific WiFi interface.
+By default, the router and Internet checks use the operating system's active/default network path. A connected WiFi interface is also detected automatically on Linux, macOS, and Windows. Use `--wifi-interface` to force a specific WiFi interface.
 
 ```bash
 router-monitor 12h --wifi-interface wlan0
@@ -134,13 +134,21 @@ The router web interface is also measured once per sample using `http://<router-
 
 Application-level connectivity is measured with a DNS lookup for `google.com`, an HTTPS request to `https://www.google.com`, and an HTTPS request to `https://1.1.1.1`. Each application-level check uses a 3-second timeout and reports only `ok` or `timeout`.
 
-The default router and Internet ping checks use the operating system's active/default network path, so an Ethernet-connected device is checked without extra options. On Linux, if a connected WiFi interface is also active, the monitor automatically records WiFi telemetry and performs router/Internet pings bound to that WiFi interface. Pass `--wifi-interface wlan0` to monitor a specific WiFi interface instead of auto-detecting it.
+The default router and Internet ping checks use the operating system's active/default network path, so an Ethernet-connected device is checked without extra options. If a connected WiFi interface is also active, the monitor automatically records WiFi telemetry, and on platforms that support interface binding (Linux `ping -I`, macOS `ping -b`) it also performs router/Internet pings bound to that WiFi interface. Pass `--wifi-interface wlan0` to monitor a specific WiFi interface instead of auto-detecting it.
 
 The TCP monitor is enabled by default and checks reachability of `1.1.1.1:443`; use `--tcp-target HOST:PORT` to change it. WebSocket monitoring is enabled by default and connects to the public echo server `wss://echo.websocket.org`; use `--websocket-url URL` to change it.
 
-The client-link monitor is isolated behind a trait so future platform-specific providers can emit the same WiFi/session metric shape without changing CSV or correlation logic.
+The client-link monitor is isolated behind a trait so each platform's provider emits the same WiFi/session metric shape without changing CSV or correlation logic.
 
-Core monitoring, weather, TCP, WebSocket, CSV, and event logging are portable across Linux, macOS, and Windows. WiFi telemetry currently uses Linux sysfs, `/proc/net/wireless`, and `iw` when available; on macOS and Windows the default-route checks still run, while `--wifi-interface` is ignored gracefully until native client-link providers are added.
+Core monitoring, weather, TCP, WebSocket, CSV, and event logging are portable across Linux, macOS, and Windows, and WiFi telemetry now has a native provider on each:
+
+| Platform                   | WiFi discovery & link source                                                    | Bound pings | Notes                                                                                              |
+| -------------------------- | ------------------------------------------------------------------------------- | ----------- | -------------------------------------------------------------------------------------------------- |
+| Debian, Ubuntu, Arch Linux | `/proc/net/wireless` + `/sys/class/net`, then `iw` → `iwconfig` → `/proc` for link data | `ping -I`   | Signal and link quality fall back to `/proc/net/wireless` when `iw`/`iwconfig` are not installed.   |
+| macOS                      | `networksetup -listallhardwareports` + `ipconfig getsummary`                    | `ping -b`   | Interface detection and bound pings always work; association is then confirmed by the bound pings. macOS redacts the BSSID (and exposes signal/bitrate/channel) only to processes with Location Services authorization or via root `wdutil`/a multi-second `system_profiler` call, so those cells are typically empty for an unprivileged CLI. |
+| Windows                    | `netsh wlan show interfaces`                                                     | none        | Signal (as link quality), BSSID, channel, and rx/tx rates are reported; ICMP cannot be bound to an interface, so WiFi-bound pings are skipped. |
+
+Because the failure classifier only treats WiFi-bound ping timeouts as link evidence on platforms that actually bind ICMP, Windows (which skips the bound pings) raises a WiFi failure only when the adapter's link metadata shows it has dropped its BSSID.
 
 Environmental data is collected every 5 minutes and cached between refreshes. By default the tool attempts city-level public IP geolocation and caches the resolved latitude/longitude, place metadata, source, and precision under the user cache directory. This does not require GPS hardware and is usually accurate enough for city-level weather correlation. Use `--latitude` and `--longitude` to provide an explicit location. If geolocation or weather lookup is unavailable, weather collection is disabled gracefully and the weather CSV cells remain empty.
 
@@ -163,7 +171,7 @@ Weather data currently comes from Open-Meteo. The weather provider is isolated b
 | TCP monitor target              | `1.1.1.1:443`                                                                        |
 | WebSocket monitor URL           | `wss://echo.websocket.org`                                                           |
 | WebSocket heartbeat interval    | 15 seconds                                                                           |
-| WiFi monitoring                 | Auto-detect a connected Linux WiFi interface; `--wifi-interface` overrides it        |
+| WiFi monitoring                 | Auto-detect a connected WiFi interface on Linux/macOS/Windows; `--wifi-interface` overrides it |
 | WiFi low signal threshold       | `-75 dBm`                                                                            |
 | WiFi low link-quality threshold | `35`                                                                                 |
 | Weather provider                | Open-Meteo                                                                           |

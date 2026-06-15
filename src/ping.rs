@@ -93,8 +93,18 @@ fn current_platform() -> PingPlatform {
     }
 }
 
+/// Whether ICMP can be bound to a specific network interface on this platform.
+/// Linux uses `ping -I <iface>` and macOS uses `ping -b <boundif>`; Windows and
+/// other platforms have no equivalent, so WiFi-bound pings are skipped there.
+pub fn interface_binding_supported() -> bool {
+    interface_ping_supported()
+}
+
 fn interface_ping_supported() -> bool {
-    current_platform() == PingPlatform::Linux
+    matches!(
+        current_platform(),
+        PingPlatform::Linux | PingPlatform::MacOs
+    )
 }
 
 fn ping_args_for_platform(
@@ -113,10 +123,18 @@ fn ping_args_for_platform(
     .map(String::from)
     .collect::<Vec<_>>();
 
-    if platform == PingPlatform::Linux {
-        if let Some(interface) = interface {
-            args.push("-I".to_string());
-            args.push(interface.to_string());
+    if let Some(interface) = interface {
+        // Linux binds with `-I <iface>`; macOS binds with `-b <boundif>`.
+        match platform {
+            PingPlatform::Linux => {
+                args.push("-I".to_string());
+                args.push(interface.to_string());
+            }
+            PingPlatform::MacOs => {
+                args.push("-b".to_string());
+                args.push(interface.to_string());
+            }
+            _ => {}
         }
     }
 
@@ -192,15 +210,23 @@ mod tests {
     }
 
     #[test]
-    fn builds_macos_ping_args_without_linux_interface_binding() {
+    fn builds_macos_ping_args_with_boundif_interface_binding() {
         assert_eq!(
             ping_args_for_platform("1.1.1.1", Some("en0"), PingPlatform::MacOs),
+            vec!["-c", "1", "-n", "-W", "1000", "-b", "en0", "1.1.1.1"]
+        );
+    }
+
+    #[test]
+    fn builds_macos_ping_args_without_interface() {
+        assert_eq!(
+            ping_args_for_platform("1.1.1.1", None, PingPlatform::MacOs),
             vec!["-c", "1", "-n", "-W", "1000", "1.1.1.1"]
         );
     }
 
     #[test]
-    fn builds_windows_ping_args() {
+    fn builds_windows_ping_args_without_interface_binding() {
         assert_eq!(
             ping_args_for_platform("1.1.1.1", Some("Wi-Fi"), PingPlatform::Windows),
             vec!["-n", "1", "-w", "1000", "1.1.1.1"]

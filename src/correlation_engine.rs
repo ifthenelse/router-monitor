@@ -46,10 +46,14 @@ pub fn classify_sample(sample: &CsvSample) -> SuspectedFailureLayer {
         && sample.https_google.status == HttpsStatus::Ok
         && sample.https_cloudflare.status == HttpsStatus::Ok;
     let baseline_healthy = baseline_router_healthy && baseline_internet_healthy;
-    let wifi_failure = sample.wifi.enabled
-        && (!sample.wifi.associated()
-            || sample.wifi.router_ping.status == PingStatus::Timeout
+    // Bound-ping timeouts only count as link evidence where ICMP could actually
+    // be bound to the WiFi interface (Linux, macOS). On platforms without
+    // interface binding (e.g. Windows) association is judged from link metadata
+    // alone, so the always-empty bound pings never raise false WiFi failures.
+    let bound_ping_failure = sample.wifi.bound_pings_supported
+        && (sample.wifi.router_ping.status == PingStatus::Timeout
             || sample.wifi.internet_ping.status == PingStatus::Timeout);
+    let wifi_failure = sample.wifi.enabled && (!sample.wifi.associated() || bound_ping_failure);
     let session_failure =
         !sample.tcp.connected || (sample.websocket.enabled && !sample.websocket.connected);
 
@@ -101,6 +105,30 @@ mod tests {
         sample.wifi.internet_ping = PingResult::ok(5.0);
 
         assert_eq!(classify_sample(&sample), SuspectedFailureLayer::None);
+    }
+
+    #[test]
+    fn does_not_flag_wifi_failure_from_skipped_bound_pings_on_unbindable_platforms() {
+        // Windows reports rich link metadata but cannot bind ICMP, so its bound
+        // pings are always empty. A still-associated adapter must read as healthy.
+        let mut sample = healthy_sample();
+        sample.wifi.enabled = true;
+        sample.wifi.bound_pings_supported = false;
+        sample.wifi.associated_bssid = Some("70:3a:cb:12:34:56".to_string());
+        sample.wifi.router_ping = PingResult::timeout();
+        sample.wifi.internet_ping = PingResult::timeout();
+
+        assert_eq!(classify_sample(&sample), SuspectedFailureLayer::None);
+    }
+
+    #[test]
+    fn classifies_wifi_failure_when_link_metadata_shows_disassociation() {
+        let mut sample = healthy_sample();
+        sample.wifi.enabled = true;
+        sample.wifi.bound_pings_supported = false;
+        sample.wifi.associated_bssid = None;
+
+        assert_eq!(classify_sample(&sample), SuspectedFailureLayer::Wifi);
     }
 
     #[test]
