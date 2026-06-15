@@ -1,6 +1,6 @@
 [package]
 name = "router-monitor"
-version = "2.1.1"
+version = "2.1.2"
 edition = "2021"
 description = "Monitor home router and Internet connectivity and write ping measurements to CSV."
 license = "MIT"
